@@ -31,6 +31,7 @@ async def client() -> AsyncClient:
     """
     from fastapi import FastAPI
     from src.adapters.database.session import get_db
+    from src.api.routes.admin_routes import router as admin_router
     from src.api.routes.auth_routes import router as auth_router
     from src.core.services.auth_service import auth_service
 
@@ -44,6 +45,7 @@ async def client() -> AsyncClient:
 
     app = FastAPI()
     app.include_router(auth_router)
+    app.include_router(admin_router)
 
     async def _override_db():
         async with test_factory() as session:

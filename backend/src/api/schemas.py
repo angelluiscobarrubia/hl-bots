@@ -51,6 +51,22 @@ class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class ResetPasswordRequest(BaseModel):
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def password_min_length(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("La contraseña debe tener al menos 8 caracteres")
+        return v
+
+
+class UpdateUserRequest(BaseModel):
+    is_active: bool | None = None
+    role: str | None = None
+
+
 class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str
