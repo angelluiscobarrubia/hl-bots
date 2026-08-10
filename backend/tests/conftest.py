@@ -30,7 +30,10 @@ async def client() -> AsyncClient:
     del auth_service singleton para que use la misma base de datos que la app.
     """
     from fastapi import FastAPI
+    from slowapi import _rate_limit_exceeded_handler
+    from slowapi.errors import RateLimitExceeded
     from src.adapters.database.session import get_db
+    from src.api.limiter import limiter
     from src.api.routes.admin_routes import router as admin_router
     from src.api.routes.auth_routes import router as auth_router
     from src.core.services.auth_service import auth_service
@@ -43,7 +46,11 @@ async def client() -> AsyncClient:
     # Parchear el auth_service singleton para que use la base de test
     auth_service._session_factory = test_factory
 
+    limiter.reset()
+
     app = FastAPI()
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     app.include_router(auth_router)
     app.include_router(admin_router)
 

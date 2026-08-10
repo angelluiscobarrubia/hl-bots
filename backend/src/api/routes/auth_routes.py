@@ -1,14 +1,13 @@
 """Rutas de autenticación."""
-from __future__ import annotations
-
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.adapters.database.session import get_db
 from src.adapters.security.jwt import decode_token
 from src.api.dependencies import get_current_user
+from src.api.limiter import limiter
 from src.api.schemas import (
     ChangePasswordRequest,
     LoginRequest,
@@ -16,6 +15,7 @@ from src.api.schemas import (
     TokenResponse,
     UserOut,
 )
+from src.core.config import settings
 from src.core.models import User
 from src.core.services.auth_service import auth_service
 
@@ -23,7 +23,12 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)) -> TokenResponse:
+@limiter.limit(f"{settings.rate_limit_login_per_minute}/minute")
+async def login(
+    request: Request,
+    body: LoginRequest,
+    db: AsyncSession = Depends(get_db),
+) -> TokenResponse:
     user = await auth_service.authenticate(body.email, body.password)
     if user is None:
         raise HTTPException(
@@ -39,7 +44,12 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)) -> Token
 
 
 @router.post("/refresh", response_model=TokenResponse)
-async def refresh(body: RefreshRequest, db: AsyncSession = Depends(get_db)) -> TokenResponse:
+@limiter.limit(f"{settings.rate_limit_refresh_per_minute}/minute")
+async def refresh(
+    request: Request,
+    body: RefreshRequest,
+    db: AsyncSession = Depends(get_db),
+) -> TokenResponse:
     try:
         payload = decode_token(body.refresh_token)
     except jwt.PyJWTError:
