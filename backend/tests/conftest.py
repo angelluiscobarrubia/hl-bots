@@ -1,6 +1,7 @@
 """Fixtures compartidos para toda la suite de tests."""
 
 import pytest
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -18,4 +19,40 @@ async def db_session() -> AsyncSession:
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as session:
         yield session
+    await engine.dispose()
+
+
+@pytest.fixture
+async def client() -> AsyncClient:
+    """Fixture que construye una app FastAPI mínima con las rutas de auth.
+
+    Crea su propia base de datos SQLite en memoria y parchea el session_factory
+    del auth_service singleton para que use la misma base de datos que la app.
+    """
+    from fastapi import FastAPI
+    from src.adapters.database.session import get_db
+    from src.api.routes.auth_routes import router as auth_router
+    from src.core.services.auth_service import auth_service
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    test_factory = async_sessionmaker(engine, expire_on_commit=False)
+    # Parchear el auth_service singleton para que use la base de test
+    auth_service._session_factory = test_factory
+
+    app = FastAPI()
+    app.include_router(auth_router)
+
+    async def _override_db():
+        async with test_factory() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = _override_db
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        yield c
+
     await engine.dispose()
