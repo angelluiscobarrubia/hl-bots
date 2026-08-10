@@ -1,0 +1,141 @@
+Estructura de Carpetas (estado actual)
+=======================================
+
+Refleja el estado real del proyecto tras la primera iteración de implementación.
+Actualizado el 2026-08-09. Sincronizar con este archivo tras cada cambio estructural.
+
+```
+hl-bots/
+├── backend/
+│   ├── src/
+│   │   ├── core/                         # Lógica de negocio principal (INDEPENDIENTE)
+│   │   │   ├── entities/                 # Entidades de negocio (Pydantic BaseModel)
+│   │   │   │   ├── bot.py                # Bot, BotStatus
+│   │   │   │   └── order.py              # Order, OrderSide, OrderStatus
+│   │   │   ├── ports/                    # Puertos (Interfaces, ABC)
+│   │   │   │   ├── i_bot_manager.py      # IBotManager
+│   │   │   │   ├── i_strategy.py         # IStrategy + Signal
+│   │   │   │   └── i_hyperliquid_adapter.py  # IHyperliquidAdapter
+│   │   │   ├── services/                 # Servicios de negocio (Casos de uso)
+│   │   │   │   └── strategy_manager.py   # Registry dinámico de estrategias
+│   │   │   ├── config.py                 # Pydantic Settings (.env tipado)
+│   │   │   ├── logging.py                # structlog (JSON prod / consola dev)
+│   │   │   ├── models.py                 # Base SQLAlchemy + TimestampMixin
+│   │   │   └── exceptions.py             # Excepciones personalizadas (TODO)
+│   │   │
+│   │   ├── adapters/                     # Implementaciones concretas de los puertos
+│   │   │   ├── hyperliquid/              # Adaptador para Hyperliquid (TODO)
+│   │   │   │   ├── hyperliquid_adapter.py
+│   │   │   │   └── websocket_manager.py
+│   │   │   ├── database/                 # Adaptador para Base de Datos (TODO)
+│   │   │   │   ├── postgres_adapter.py
+│   │   │   │   └── redis_adapter.py
+│   │   │   └── notifications/            # Adaptador para notificaciones (TODO)
+│   │   │       └── telegram_notifier.py
+│   │   │
+│   │   ├── api/                          # Capa de presentación (Backend)
+│   │   │   ├── routes/                   # Endpoints REST (TODO)
+│   │   │   │   ├── bot_routes.py
+│   │   │   │   ├── strategy_routes.py
+│   │   │   │   └── auth_routes.py        # Login, JWT, refresh token
+│   │   │   ├── websocket/                # Endpoints WebSocket para datos en vivo (TODO)
+│   │   │   │   └── bot_status_ws.py
+│   │   │   └── dependencies.py           # Inyección de dependencias (FastAPI Depends)
+│   │   │
+│   │   └── main.py                       # Punto de entrada FastAPI
+│   │                                     # (lifespan, /health, /strategies, /metrics)
+│   │
+│   ├── strategies/                       # Estrategias como plugins (hot-reload)
+│   │   ├── __init__.py                   # Sys-path bootstrap + export BaseStrategy
+│   │   ├── base_strategy.py              # Clase base abstracta (hereda IStrategy)
+│   │   ├── moving_average_crossover.py   # Estrategia de ejemplo funcional
+│   │   └── watcher.py                    # watchfiles → StrategyManager.reload()
+│   │
+│   ├── alembic/                          # Migraciones async
+│   │   ├── env.py                        # Configuración async (async_engine_from_config)
+│   │   ├── script.py.mako                # Plantilla de migración
+│   │   └── versions/                     # Migraciones versionadas
+│   │       └── c9ce4e4ba658_initial_empty.py
+│   │
+│   ├── tests/                            # (pendiente crear)
+│   │   ├── unit/                         # Pruebas unitarias del core
+│   │   ├── integration/                  # Pruebas de integración con adaptadores
+│   │   └── conftest.py                   # Fixtures compartidas (faker, factory-boy)
+│   │
+│   ├── Dockerfile                        # Imagen única para migrate + backend
+│   ├── alembic.ini                       # Config de Alembic
+│   └── pyproject.toml                    # Dependencias + configuración (Poetry)
+│
+├── frontend/                             # UI Web (React + Vite + TS)
+│   ├── src/
+│   │   ├── components/                   # Componentes reutilizables (TODO)
+│   │   ├── pages/                        # Páginas (Dashboard, Bot Config, etc.)
+│   │   │   ├── DashboardPage.tsx         # Vista principal con /health
+│   │   │   ├── BotsPage.tsx              # Listado + creación de bots (esqueleto)
+│   │   │   └── StrategiesPage.tsx        # Lista estrategias + recarga manual
+│   │   ├── services/                     # Servicios para llamar a la API del backend
+│   │   │   └── api.ts                    # Cliente axios + interceptores
+│   │   ├── store/                        # Estado global (Zustand)
+│   │   │   └── appStore.ts               # Health, app state
+│   │   ├── hooks/                        # Custom hooks (TODO)
+│   │   ├── lib/                          # Utilidades (TODO)
+│   │   ├── types/                        # Tipos compartidos con backend (TODO)
+│   │   ├── App.tsx                       # Router principal
+│   │   ├── main.tsx                      # Entry point (QueryClient, BrowserRouter)
+│   │   ├── index.css                     # Tailwind directives
+│   │   ├── test-setup.ts                 # Setup de Vitest (jest-dom)
+│   │   └── vite-env.d.ts                 # Tipos de Vite env vars
+│   ├── index.html                        # HTML base (data-theme="dark")
+│   ├── package.json                      # Dependencias + scripts (npm)
+│   ├── tsconfig.json                     # TypeScript estricto
+│   ├── vite.config.ts                    # Vite + proxy /api → :8000
+│   ├── tailwind.config.js                # Tailwind + DaisyUI plugin
+│   ├── postcss.config.js
+│   ├── .eslintrc.cjs
+│   └── .prettierrc.json
+│
+├── doc/                                  # Especificación del proyecto
+│   ├── Indice.md                         # Navegación de la documentación
+│   ├── Stack Tecnológico.txt
+│   ├── Desarrollo Local (Quickstart).txt
+│   ├── Diagrama Conceptual de Alto Nivel.txt
+│   ├── Diagrama (Multiusuario + Paper).txt
+│   ├── Elección de UI (Orientado a Agente IA y Ahorro de Tokens).txt
+│   ├── Estrategias como Plugins (Hot-Reload).txt
+│   ├── Estructura de Carpetas Propuesta.txt
+│   ├── Gestión de API Keys (Multiusuario + Seguridad).txt
+│   ├── Paperbroker (Modo Simulación).txt
+│   ├── Logging y Observabilidad.txt
+│   └── Calidad de Código.txt
+│
+├── docker-compose.yml                    # postgres + redis + migrate + backend
+├── pyproject.toml                        # Workspace Poetry (raíz)
+├── poetry.lock
+├── .env.example                          # Plantilla de variables de entorno
+├── .gitignore
+├── .pre-commit-config.yaml               # Hooks de git (ruff + mypy + hygiene)
+└── README.md                             # Quickstart + arquitectura
+```
+
+────────────────────────────────────────────────────────────────────────
+NOTAS SOBRE LA ESTRUCTURA
+────────────────────────────────────────────────────────────────────────
+
+1. `backend/src/core/` no importa nada de `adapters/` ni `api/` (regla hexagonal).
+   `core` solo expone entidades, ports, services y modelos SQLAlchemy.
+
+2. `backend/strategies/` está al mismo nivel que `backend/src/` a propósito:
+   - Se carga como paquete top-level (`import strategies.mi_estrategia`)
+   - Permite que las estrategias sean código "externo" al core (plugins)
+   - El watcher solo observa este directorio
+
+3. `backend/alembic/` separado de `src/` para que las migraciones sean
+   operacionales (versionadas, ejecutables con CLI), no parte del código
+   de aplicación que se importa.
+
+4. `frontend/src/types/` está vacío: cuando se estabilicen los schemas de
+   la API backend, se generarán tipos TypeScript con `openapi-typescript`
+   (pendiente de añadir como devDependency).
+
+5. `doc/` contiene TODO lo conceptual. NO es código; es la fuente de verdad
+   de las decisiones arquitectónicas y operativas.

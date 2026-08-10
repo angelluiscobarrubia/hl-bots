@@ -1,0 +1,130 @@
+Logging y Observabilidad
+=========================
+
+Decisiones de logging estructurado y métricas en el proyecto.
+
+────────────────────────────────────────────────────────────────────────
+LOGGING ESTRUCTURADO · structlog
+────────────────────────────────────────────────────────────────────────
+
+Librería: structlog ^24.4
+Configurado en: src/core/logging.py
+Helper: get_logger(__name__) → devuelve un BoundLogger ya configurado.
+
+Formato:
+    - DESARROLLO (APP_ENV=development): salida en consola con colores
+      Ejemplo:
+        2026-08-09T18:49:11Z [info     ] strategy_manager.reload.done
+          [src.core.services.strategy_manager] app_env=development count=2
+          names=['MovingAverageCrossover', 'RSIStrategy']
+
+    - PRODUCCIÓN (APP_ENV=production): JSON por línea (1 evento = 1 línea)
+      Ejemplo:
+        {"event":"strategy_manager.reload.done","timestamp":"2026-08-09T18:49:11Z",
+         "level":"info","logger":"src.core.services.strategy_manager",
+         "app_env":"production","count":2,"names":["MovingAverageCrossover","RSIStrategy"]}
+
+Processors compartidos (en ambos modos):
+    - structlog.contextvars.merge_contextvars  → une context (bot_id, user_id)
+    - structlog.stdlib.add_log_level            → añade "level"
+    - structlog.stdlib.add_logger_name          → añade "logger"
+    - structlog.processors.TimeStamper          → timestamp ISO 8601 UTC
+    - structlog.processors.format_exc_info      → formatea excepciones
+    - _add_app_context                          → inyecta app_env
+
+Contexto multi-tenant:
+    Cada log emitido dentro de una request lleva automáticamente:
+    - bot_id (id del bot)
+    - user_id (id del usuario dueño del bot)
+    - request_id (si está activado)
+
+    Esto se hace con structlog.contextvars.bind_contextvars() en middleware
+    de FastAPI (pendiente de implementar cuando se añada auth).
+
+Niveles por librería (configurados en configure_logging):
+    - uvicorn.access      → WARNING     (logs ruidosos de cada request)
+    - sqlalchemy.engine   → WARNING     (queries individuales, muy verboso)
+    - httpx               → WARNING     (peticiones HTTP salientes)
+    - alembic             → INFO        (migraciones)
+    - root + app          → INFO (configurable vía LOG_LEVEL)
+
+Uso típico en código:
+
+    from src.core.logging import get_logger
+
+    logger = get_logger(__name__)
+
+    async def place_order(bot_id: str, symbol: str, side: str):
+        logger.info("order.placing", bot_id=bot_id, symbol=symbol, side=side)
+        try:
+            result = await exchange.order(...)
+            logger.info("order.placed", bot_id=bot_id, order_id=result.id)
+        except Exception:
+            logger.exception("order.failed", bot_id=bot_id, symbol=symbol)
+
+
+────────────────────────────────────────────────────────────────────────
+MÉTRICAS · Prometheus
+────────────────────────────────────────────────────────────────────────
+
+Librería: prometheus-fastapi-instrumentator ^7.0
+Configurado en: src/main.py (en el arranque de la app, fuera del lifespan)
+Expuesto en: GET /metrics
+
+Métricas automáticas que expone:
+    - http_requests_total{method,handler,status}        contador de requests
+    - http_request_duration_seconds{...}                histograma de latencia
+    - http_requests_in_progress{...}                    gauge de requests activos
+    - http_requests_exceptions_total{...}               contador de excepciones
+    - Métricas de Python (GC, memoria, etc.)            gracias a prometheus_client
+
+Excluidas del tracking:
+    - /metrics     (no queremos métricas de las métricas)
+    - /health      (health check, no aporta valor medir)
+
+Métricas personalizadas (TODO):
+    - hl_bots_active{user_id, strategy}                 gauge
+    - hl_orders_placed_total{user_id, symbol, side}     counter
+    - hl_paper_balance{user_id}                        gauge
+    - hl_strategy_signals_total{strategy, action}      counter
+    - hl_api_errors_total{adapter, kind}               counter
+
+Estas se añadirán con un módulo src/core/metrics.py cuando se implementen
+los adapters reales.
+
+Para visualizar:
+    1. Levantar Prometheus + Grafana localmente (pendiente docker-compose)
+    2. O usar https://prometheus.io/docs/prometheus/latest/getting_started/
+
+
+────────────────────────────────────────────────────────────────────────
+HEALTH CHECKS · /health
+────────────────────────────────────────────────────────────────────────
+
+Endpoint: GET /health
+Respuesta:
+    {
+      "status": "ok",
+      "service": "hyperliquid-bot-platform",
+      "version": "0.1.0",
+      "strategies_available": ["MovingAverageCrossover", ...]
+    }
+
+Pensado para:
+    - Load balancer: detectar pods caídos
+    - Docker healthcheck: añadir al Dockerfile cuando se monte en compose
+    - Monitoring: confirmar que el watcher de strategies está vivo
+      (si strategies_available tiene datos, el manager se cargó bien)
+
+
+────────────────────────────────────────────────────────────────────────
+TRAZAS DISTRIBUIDAS (futuro)
+────────────────────────────────────────────────────────────────────────
+
+Pendiente: integrar OpenTelemetry cuando se añadan más servicios
+(separar bot-engine del API, añadir workers, etc.).
+
+Stack previsto:
+    - opentelemetry-api
+    - opentelemetry-sdk
+    - opentelemetry-exporter-otlp  → Jaeger o Tempo

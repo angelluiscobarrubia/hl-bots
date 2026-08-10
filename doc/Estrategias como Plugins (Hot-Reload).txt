@@ -1,0 +1,148 @@
+Estrategias como Plugins (Hot-Reload)
+======================================
+
+Implementación completa con watchfiles + StrategyManager.
+Estado: funcionando y probado en vivo (ver "Verificación" al final).
+
+────────────────────────────────────────────────────────────────────────
+ARQUITECTURA
+────────────────────────────────────────────────────────────────────────
+
+Tres piezas cooperan:
+
+    strategies/base_strategy.py
+        Clase abstracta BaseStrategy que implementa IStrategy.
+        Cualquier estrategia nueva debe heredar de ella.
+
+    strategies/<nombre>.py
+        Archivo plano con una clase que hereda de BaseStrategy.
+        Sin registro manual: el manager lo detecta automáticamente.
+
+    src/core/services/strategy_manager.py
+        Singleton que mantiene un dict {nombre_clase: Clase}.
+        Método reload() escanea el paquete y reconstruye el registro.
+
+    strategies/watcher.py
+        Tarea asyncio que usa watchfiles.awatch() sobre el directorio.
+        Cuando detecta cambios, llama a StrategyManager.reload().
+        Debounce de 500 ms para evitar recargas en ráfaga (al guardar).
+
+────────────────────────────────────────────────────────────────────────
+FLUJO DE CARGA INICIAL
+────────────────────────────────────────────────────────────────────────
+
+    main.py:startup
+        └── strategy_manager.reload()
+              └── pkgutil.iter_modules(strategies/)
+                    └── importlib.import_module("strategies.<nombre>")
+                          └── busca clases que hereden de BaseStrategy
+                          └── las añade al registro
+
+────────────────────────────────────────────────────────────────────────
+FLUJO DE HOT-RELOAD
+────────────────────────────────────────────────────────────────────────
+
+    Usuario crea/edita strategies/mi_idea.py
+        └── watchfiles.awatch() detecta el cambio
+              └── espera 500 ms (debounce)
+                    └── llama a on_change callback
+                          └── strategy_manager.reload()
+                                └── limpia sys.modules[strategies.*]
+                                └── reimporta todo desde disco
+                                └── reconstruye el registro
+
+────────────────────────────────────────────────────────────────────────
+IMPORTANTE: bots activos NO se recargan automáticamente
+────────────────────────────────────────────────────────────────────────
+
+Decisión arquitectónica intencional (consistente con el doc original):
+
+    - Python no puede reemplazar la clase de un objeto ya instanciado.
+    - Si un bot está corriendo con la clase "vieja", seguirá con ella.
+    - El operador debe reiniciar el bot desde la UI (botón "Restart").
+    - Esto evita race conditions, pérdida de estado y órdenes fantasma.
+
+Cuando el operador reinicia el bot:
+    1. Se destruye la instancia vieja (Orchestrator.stop)
+    2. Se crea una nueva instancia con la clase actualizada
+    3. La nueva instancia lee su config desde la DB
+    4. Comienza a analizar el mercado con la lógica nueva
+
+────────────────────────────────────────────────────────────────────────
+CONVENCIONES DE UNA ESTRATEGIA
+────────────────────────────────────────────────────────────────────────
+
+Mínimo viable:
+
+    from base_strategy import BaseStrategy
+    from src.core.entities.order import OrderSide
+    from src.core.ports.i_strategy import Signal
+
+
+    class MiEstrategia(BaseStrategy):
+        name = "mi_estrategia"        # usado por la UI para identificar
+
+        def __init__(self, config: dict) -> None:
+            super().__init__(config)
+            # leer parámetros de config con valores por defecto
+
+        async def analyze(self, market_data: dict) -> Signal | None:
+            # lógica de análisis
+            # devuelve Signal(BUY/SELL, quantity, confidence) o None
+
+        def get_required_params(self) -> dict:
+            # esquema para que la UI genere el formulario
+            return {"param1": {"type": "int", "default": 14, ...}}
+
+market_data recibido por analyze() (schema en src/core/models/market_data.py, TODO):
+    {
+        "symbol": "BTC-USD",
+        "interval": "1m",
+        "closes": [68000.0, 68010.5, ...],
+        "volumes": [1.2, 0.8, ...],
+        "timestamp": "2026-08-09T18:00:00Z",
+    }
+
+Signal devuelto:
+    Signal(
+        action=OrderSide.BUY o OrderSide.SELL,
+        quantity=0.01,         # en BTC; None = usar la cantidad por defecto del bot
+        confidence=0.85,       # 0 a 1, usado por Risk Manager
+    )
+
+────────────────────────────────────────────────────────────────────────
+ENDPOINTS PARA INSPECCIÓN
+────────────────────────────────────────────────────────────────────────
+
+    GET  /strategies           → {"available": [...], "count": N}
+    POST /strategies/reload    → fuerza reload manual (útil para debug)
+
+────────────────────────────────────────────────────────────────────────
+VERIFICACIÓN REAL (2026-08-09)
+────────────────────────────────────────────────────────────────────────
+
+Test ejecutado en vivo:
+
+    1. Backend arrancado con uvicorn (strategies_watcher activo)
+    2. Se creó strategies/rsi_strategy.py
+    3. Logs emitidos en <1 s:
+
+       strategies_watcher.changes
+         changes={(Change.added, /path/to/rsi_strategy.py)}
+       strategy_manager.reload.start
+       strategy_manager.reload.done
+         count=2  names=['MovingAverageCrossover', 'RSIStrategy']
+
+    4. GET /strategies → 2 estrategias (sin reiniciar uvicorn)
+    5. Archivo eliminado → el siguiente reload ya no lo incluye
+
+────────────────────────────────────────────────────────────────────────
+PENDIENTE
+────────────────────────────────────────────────────────────────────────
+
+    - Notificar al frontend vía WebSocket cuando hay cambios
+      ("estrategia nueva disponible: RSIStrategy")
+    - Versionado de estrategias (git hash o timestamp)
+    - Sandboxing: ejecutar estrategias en subprocess con permisos limitados
+      (importante cuando vengan estrategias de terceros)
+    - UI: página "Estrategías disponibles" con botón "Activar en bot"

@@ -1,0 +1,148 @@
+Paperbroker (Modo Simulación)
+==============================
+
+Adaptador que simula la exchange sin gastar dinero real. Misma interfaz
+que el adapter real → el Orchestrator no sabe cuál está usando.
+
+────────────────────────────────────────────────────────────────────────
+ARQUITECTURA
+────────────────────────────────────────────────────────────────────────
+
+    IHyperliquidAdapter (puerto)
+        ├── RealHyperliquidAdapter    → llama a api.hyperliquid.xyz (REST + WS)
+        └── PaperHyperliquidAdapter   → simula fills, mantiene balance virtual en Redis
+
+Ambos:
+    - Implementan la misma interfaz (async/await)
+    - Mismas excepciones
+    - Misma estructura de Order devuelto
+
+El Orchestrator recibe uno u otro en función de Bot.is_paper.
+La estrategia NO nota la diferencia: le da igual.
+
+────────────────────────────────────────────────────────────────────────
+REDIS COMO "BOOK" DEL PAPER BROKER
+────────────────────────────────────────────────────────────────────────
+
+Decisión: usar Redis (no Postgres) para el balance y las órdenes del paper broker.
+
+Por qué Redis:
+    - Latencia sub-ms (escribir/leer balance antes de cada orden)
+    - Operaciones atómicas (INCR/DECR) sin race conditions
+    - TTL nativo (limpiar órdenes viejas automáticamente)
+    - Sets ordenados (ZSET) para histórico de precios (slippage simulation)
+
+Esquema de claves Redis (paper broker):
+
+    hl:paper:{user_id}:{bot_id}:balance:usdc
+        → float, ej. "10000.00"
+    hl:paper:{user_id}:{bot_id}:positions
+        → hash {symbol: qty_signed} (qty positiva=long, negativa=short)
+    hl:paper:{user_id}:{bot_id}:orders
+        → lista de order_id (las últimas 100, con TTL 7 días)
+    hl:paper:{user_id}:{bot_id}:order:{order_id}
+        → hash con {symbol, side, qty, price, status, slippage, fee}
+    hl:paper:{symbol}:last_price
+        → float, actualizado por el WebSocket real (mirror)
+
+Librería cliente: redis ^5.0 (cliente asyncio oficial).
+
+────────────────────────────────────────────────────────────────────────
+LÓGICA DEL PAPER (PENDIENTE de implementar en src/adapters/hyperliquid/paper_adapter.py)
+────────────────────────────────────────────────────────────────────────
+
+async def place_order(self, symbol, side, quantity, price=None, is_reduce_only=False):
+    # 1. Validar balance suficiente
+    balance = await self._get_balance("USDC")
+    last_price = await self._get_last_price(symbol) or price
+    notional = quantity * last_price
+    if notional > balance:
+        return Order(status=REJECTED, error_msg="Insufficient balance")
+
+    # 2. Simular slippage (modelo simple: 0.05% para market orders)
+    fill_price = last_price * (1 + SLIPPAGE_BPS / 10000)
+    if side == SELL:
+        fill_price = last_price * (1 - SLIPPAGE_BPS / 10000)
+
+    # 3. Calcular comisión (Hyperliquid cobra ~0.05% taker / 0.02% maker)
+    fee = notional * FEE_RATE
+
+    # 4. Actualizar estado
+    await self._debit_balance(notional + fee)
+    await self._update_position(symbol, side, quantity)
+
+    # 5. Devolver Order FILLED
+    return Order(
+        id=uuid4().hex,
+        bot_id=self.bot_id,
+        symbol=symbol,
+        side=side,
+        price=fill_price,
+        quantity=quantity,
+        status=FILLED,
+        filled_at=datetime.utcnow(),
+    )
+
+────────────────────────────────────────────────────────────────────────
+MIRROR DE PRECIOS REALES
+────────────────────────────────────────────────────────────────────────
+
+Para que el paper broker reaccione a precios reales (no aleatorios),
+usa el WebSocket público de Hyperliquid:
+
+    # Una sola conexión por símbolo compartido entre todos los paper bots
+    async def mirror_price(symbol):
+        async with websockets.connect(HYPERLIQUID_WS_URL) as ws:
+            await ws.send({"method": "subscribe", "subscription": {"type": "trades", "coin": symbol}})
+            async for msg in ws:
+                price = msg["data"]["px"]
+                await redis.set(f"hl:paper:{symbol}:last_price", price)
+
+Esta conexión la abre el background process "PriceMirror" (PENDIENTE).
+
+────────────────────────────────────────────────────────────────────────
+UI · TOGGLE REAL / PAPER
+────────────────────────────────────────────────────────────────────────
+
+Formulario de creación de bot:
+
+    <label class="cursor-pointer label">
+      <span class="label-text">Modo</span>
+      <input type="checkbox" class="toggle toggle-primary" name="is_paper" />
+      <span class="label-text-alt">
+        {is_paper ? "📝 Paper (simulado)" : "💰 Real (dinero real)"}
+      </span>
+    </label>
+
+Si el toggle está activado → Bot.is_paper = True → PaperHyperliquidAdapter.
+Si no → Bot.is_paper = False → RealHyperliquidAdapter.
+
+El Orchestrator recibe uno u otro; la estrategia es idéntica.
+
+────────────────────────────────────────────────────────────────────────
+VENTAJAS DE ESTE DISEÑO
+────────────────────────────────────────────────────────────────────────
+
+    ✓ Testear estrategias sin riesgo financiero
+    ✓ Comparar rendimiento: misma estrategia en paper y en real
+    ✓ Validar lógica antes de gastar comisiones reales
+    ✓ Onboarding: nuevos usuarios prueban en paper primero
+    ✓ Stress test: 100 bots en paper no cuestan nada (vs $X en real)
+
+────────────────────────────────────────────────────────────────────────
+LIMITACIONES CONOCIDAS
+────────────────────────────────────────────────────────────────────────
+
+    ⚠ Slippage es aproximado (no modela orderbook depth)
+    ⚠ No simula funding rate (perps)
+    ⚠ No simula liquidaciones (si el balance se agota, el bot simplemente falla)
+    ⚠ Latencia artificial: las órdenes se llenan instantáneamente (en realidad hay ms)
+
+────────────────────────────────────────────────────────────────────────
+PENDIENTE
+────────────────────────────────────────────────────────────────────────
+
+    - src/adapters/hyperliquid/paper_adapter.py
+    - src/adapters/hyperliquid/price_mirror.py (background task)
+    - Tests: comparar paper vs resultados esperados con seeds determinísticos
+    - Métrica: hl_paper_pnl{user_id, bot_id, symbol} (gauge con profit/loss)

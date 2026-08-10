@@ -1,0 +1,190 @@
+Calidad de Código (Linting, Tipado, Tests)
+==========================================
+
+Pipelines de calidad configurados en el proyecto. Todo se ejecuta en local
+con pre-commit, y se replicará en CI (GitHub Actions por añadir).
+
+────────────────────────────────────────────────────────────────────────
+BACKEND · Python
+────────────────────────────────────────────────────────────────────────
+
+RUFF (lint + format)
+    Ubicación: [tool.ruff] en pyproject.toml
+    Velocidad: ~10-100x más rápido que black + flake8 (escrito en Rust)
+    Reglas activas (select):
+        E, W     pycodestyle (errores + warnings)
+        F        pyflakes (imports no usados, variables indefinidas)
+        I        isort (orden de imports)
+        B        flake8-bugbear (bugs comunes)
+        UP       pyupgrade (sintaxis moderna)
+        N        pep8-naming
+        S        flake8-security (eval, shell injection, etc.)
+        C4       flake8-comprehensions
+        RET      flake8-return
+        SIM      flake8-simplify (try/except → contextlib.suppress)
+    Reglas ignoradas:
+        S101     asserts en tests (permitidos)
+        B008     llamadas en defaults (FastAPI Depends)
+    Per-file:
+        tests/         → S101, S106, ARG, PLR2004 (relajado)
+        strategies/    → N, S (código de plugins, más permisivo)
+
+    Comandos:
+        poetry run ruff check .         # solo lint
+        poetry run ruff check . --fix    # lint + auto-fix
+        poetry run ruff format .        # formatea
+        poetry run ruff format --check  # solo verifica (CI)
+
+MYPY (type-check)
+    Ubicación: [tool.mypy] en pyproject.toml
+    Configuración:
+        python_version = "3.10"
+        strict = false                  # por ahora (subir gradualmente)
+        warn_unused_ignores = true
+        warn_return_any = true
+        plugins = ["pydantic.mypy"]     # soporte de Pydantic v2
+        exclude = ["alembic/", "tests/"]
+    Overrides:
+        hyperliquid.*  → ignore_missing_imports (SDK sin stubs)
+
+    Comandos:
+        poetry run mypy src/
+
+PYTEST (tests + coverage)
+    Ubicación: [tool.pytest.ini_options] y [tool.coverage.*] en pyproject.toml
+    Configuración:
+        asyncio_mode = "auto"           # no requiere @pytest.mark.asyncio
+        addopts = "-ra -q --strict-markers --cov=src --cov=strategies"
+        testpaths = ["tests"]
+        markers = ["integration", "unit"]
+    Coverage:
+        source = ["src", "strategies"]
+        branch = true
+        fail_under = 60                 # umbral mínimo de cobertura
+        show_missing = true
+
+    Comandos:
+        poetry run pytest                                       # todos
+        poetry run pytest -m unit                               # solo unit
+        poetry run pytest -m integration                        # solo integration
+        poetry run pytest tests/test_strategies.py -v          # un archivo
+        poetry run pytest --cov-report=html                    # HTML en htmlcov/
+
+Convenciones de tests:
+    tests/unit/        → tests rápidos sin I/O (strategy logic, validación)
+    tests/integration/ → con Postgres/Redis/Hyperliquid (mocks o testcontainers)
+    conftest.py        → fixtures compartidos (faker, factory-boy, respx)
+    respx              → mock de httpx para testear adapter sin red
+    freezegun          → mock de datetime para RSI/MA
+    factory-boy        → crear instancias de Bot/Order en tests
+
+
+────────────────────────────────────────────────────────────────────────
+FRONTEND · TypeScript / React
+────────────────────────────────────────────────────────────────────────
+
+TYPESCRIPT (strict)
+    Ubicación: tsconfig.json
+    Configuración:
+        strict: true
+        noUnusedLocals: true
+        noUnusedParameters: true
+        noUncheckedIndexedAccess: true     # previene bugs con arrays
+        noFallthroughCasesInSwitch: true
+        jsx: "react-jsx"                   # nuevo transform de React
+        baseUrl: "./src"
+        paths: { "@/*": ["*"] }            # alias de imports
+
+    Comandos:
+        npm run typecheck                  # tsc --noEmit
+
+ESLINT
+    Ubicación: .eslintrc.cjs
+    Extends:
+        eslint:recommended
+        plugin:@typescript-eslint/recommended
+        plugin:react-hooks/recommended
+    Rules:
+        react-refresh/only-export-components (warn)
+        @typescript-eslint/no-unused-vars (warn, ignora args con _)
+
+    Comandos:
+        npm run lint                       # eslint con --max-warnings 0
+
+PRETTIER
+    Ubicación: .prettierrc.json
+    Configuración:
+        semi: true
+        singleQuote: true
+        trailingComma: "all"
+        printWidth: 100
+        plugins: prettier-plugin-tailwindcss   # ordena clases de Tailwind
+
+    Comandos:
+        npm run format         # escribe
+        npm run format:check   # solo verifica (CI)
+
+VITEST
+    Ubicación: vite.config.ts (test: {...})
+    Configuración:
+        globals: true              # describe/it/expect sin imports
+        environment: jsdom
+        setupFiles: [./src/test-setup.ts]
+    setup: src/test-setup.ts → carga @testing-library/jest-dom
+
+    Comandos:
+        npm run test         # corre una vez
+        npm run test:watch   # modo watch
+
+
+────────────────────────────────────────────────────────────────────────
+PRE-COMMIT (raíz del repo)
+────────────────────────────────────────────────────────────────────────
+
+Ubicación: .pre-commit-config.yaml
+Hooks activos:
+
+    pre-commit/pre-commit-hooks v5.0:
+        - trailing-whitespace
+        - end-of-file-fixer
+        - check-yaml / check-toml
+        - check-added-large-files
+        - detect-private-key        # bloquea commits con claves
+        - mixed-line-ending → fix=lf
+
+    astral-sh/ruff-pre-commit v0.7:
+        - ruff (con --fix, exit-non-zero-on-fix)
+        - ruff-format
+
+    pre-commit/mirrors-mypy v1.13:
+        - mypy en backend/src/ (con pydantic>=2.5)
+
+Instalación:
+    pip install pre-commit
+    pre-commit install                    # una vez, tras clonar el repo
+
+Uso:
+    pre-commit run --all-files            # correr en todo el repo
+    git commit -m "..."                   # corre solo en archivos modificados
+
+
+────────────────────────────────────────────────────────────────────────
+UMBRALES Y REGLAS DE EQUIPO
+────────────────────────────────────────────────────────────────────────
+
+    - Cobertura mínima backend: 60% (subirá a 80% tras MVP)
+    - Cobertura mínima frontend: no enforced aún (TODO)
+    - Cero warnings en typecheck y lint (--max-warnings 0)
+    - Ruff + mypy deben pasar antes de commit (pre-commit)
+    - PR sin tests no se acepta (pendiente: rule en GitHub)
+
+
+────────────────────────────────────────────────────────────────────────
+PENDIENTE
+────────────────────────────────────────────────────────────────────────
+
+    - GitHub Actions / GitLab CI con la misma suite
+    - Codecov o Coveralls para tracking de cobertura en PRs
+    - Configurar mypy en strict = true gradualmente
+    - Añadir tests de los adapters (Hyperliquid real, paper broker)
+    - E2E con Playwright en frontend

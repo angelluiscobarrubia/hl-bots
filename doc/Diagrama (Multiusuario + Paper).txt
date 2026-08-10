@@ -1,0 +1,106 @@
+Diagrama Multiusuario + Paper Broker (estado actual)
+=====================================================
+
+Flujo completo desde el usuario hasta la exchange, mostrando el aislamiento
+multi-tenant y el toggle paper/real.
+
+```
+   ┌──────────────────┐    ┌──────────────────┐
+   │ Usuario A        │    │ Usuario B        │
+   │ (API Key A)      │    │ (API Key B)      │
+   └────────┬─────────┘    └────────┬─────────┘
+            │ HTTPS                 │ HTTPS
+            │ (Bearer JWT)          │ (Bearer JWT)
+            ▼                       ▼
+   ┌─────────────────────────────────────────┐
+   │      FastAPI (/auth + /bots routes)     │
+   │  1. Valida JWT                          │
+   │  2. Recibe api_key/api_secret en body   │
+   │  3. Cifra con Fernet (MASTER_KEY)       │
+   │  4. Guarda en Postgres                  │
+   │     tabla: api_keys(bot_id, ciphertext) │
+   └─────────────────────┬───────────────────┘
+                         │
+                         ▼
+   ┌─────────────────────────────────────────┐
+   │           Orchestrator                 │
+   │   arranca bot cuando se lo piden       │
+   │   (no toca claves, pide al DB)         │
+   └─────────────────────┬───────────────────┘
+                         │
+            ┌────────────┴────────────┐
+            ▼                         ▼
+   ┌────────────────────┐    ┌────────────────────┐
+   │ Bot A              │    │ Bot B              │
+   │ is_paper = False   │    │ is_paper = True    │
+   │ user_id = A        │    │ user_id = B        │
+   └─────────┬──────────┘    └─────────┬──────────┘
+             │                        │
+             ▼                        ▼
+   ┌────────────────────┐    ┌────────────────────┐
+   │ RealAdapter        │    │ PaperAdapter       │
+   │ - Lee key descif.  │    │ - Lee balance      │
+   │   en RAM al init   │    │   virtual de Redis │
+   │ - httpx + WS a     │    │ - Mirror precios   │
+   │   api.hyperliquid  │    │   reales por WS    │
+   │ - Llena órdenes    │    │ - Simula slippage  │
+   │   con dinero real  │    │   y comisiones     │
+   └─────────┬──────────┘    └─────────┬──────────┘
+             │                        │
+             │ (mismo contrato)       │
+             └────────────┬───────────┘
+                          ▼
+              ┌──────────────────────────┐
+              │   Estrategia (Plugin)    │
+              │   - Idéntica en ambos    │
+              │   - Cargada por          │
+              │     StrategyManager      │
+              │   - Hot-reload con       │
+              │     watchfiles           │
+              └──────────────────────────┘
+
+
+═══════════════════════════════════════════════════════════════════════════
+SEGURIDAD · AISLAMIENTO POR USUARIO
+═══════════════════════════════════════════════════════════════════════════
+
+    Tabla api_keys:
+        - UNIQUE (bot_id)              → una sola clave por bot
+        - INDEX (user_id)              → búsqueda rápida por usuario
+        - FK (bot_id) → bots(id)       → integridad referencial
+
+    Middleware de FastAPI:
+        - Lee Authorization: Bearer JWT
+        - Extrae user_id del JWT
+        - request.state.user_id = user_id
+        - Todos los endpoints filtran por user_id:
+            SELECT * FROM bots WHERE user_id = $1 AND id = $2
+
+    NUNCA:
+        - SELECT * FROM bots WHERE id = $1   ← agujero de seguridad
+
+    Cross-tenant attack:
+        - Imposible si todas las queries llevan user_id del JWT
+        - Test E2E obligatorio (PENDIENTE)
+
+
+═══════════════════════════════════════════════════════════════════════════
+VERSIÓN SIMPLIFICADA (idéntica al doc original, referencia rápida)
+═══════════════════════════════════════════════════════════════════════════
+
+Usuario A (API Key A) ──┐
+Usuario B (API Key B) ──┼──> [API FastAPI] ──> (Cifra y guarda en DB)
+                         │
+                         ▼
+                  [Orchestrator]
+                         │
+          ┌──────────────┴──────────────┐
+          ▼                              ▼
+  (Si Paper=False)               (Si Paper=True)
+  [RealHyperliquidAdapter]      [PaperHyperliquidAdapter]
+  (Inyectado con API Key A/B)   (Simula fills en Redis)
+          │                              │
+          └──────────────┬───────────────┘
+                         ▼
+                  [Estrategia Plugin]
+                  (Independiente del modo)

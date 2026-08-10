@@ -1,0 +1,134 @@
+Diagrama Conceptual de Alto Nivel (estado actual)
+=================================================
+
+Refleja la arquitectura hexagonal implementada, con logging y métricas
+añadidos como cross-cutting concerns.
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                       CAPA DE PRESENTACIÓN (UI)                              │
+│  ┌────────────────────────────────────────────────────────────────────────┐  │
+│  │                      Frontend (React + Vite + TS)                     │  │
+│  │  Dashboard · Bots · Strategies · BotConfig · Login                    │  │
+│  │  Stack: Tailwind + DaisyUI + Zustand + React Query + lightweight-chts│  │
+│  └────────────────────────────────┬───────────────────────────────────────┘  │
+│                                   │ HTTP /api/* + WS /ws/*                   │
+│                                   │ (proxy en vite.config.ts)                │
+└───────────────────────────────────┼──────────────────────────────────────────┘
+                                    │
+┌───────────────────────────────────┼──────────────────────────────────────────┐
+│                       CAPA DE APLICACIÓN (Backend)                          │
+│                                                                           │
+│  ┌────────────────────────────────▼─────────────────────────────────────┐ │
+│  │                          FastAPI (main.py)                           │ │
+│  │  /api/* REST · /ws/* WebSocket · /metrics Prometheus · /docs OpenAPI│ │
+│  │  CORS · Lifespan (StrategyManager.reload + StrategiesWatcher)      │ │
+│  └────────────────────────────────┬─────────────────────────────────────┘ │
+│                                   │                                        │
+│  ┌────────────────────────────────▼─────────────────────────────────────┐ │
+│  │                            PUERTOS (Interfaces)                     │ │
+│  │  ┌───────────────┐  ┌───────────────┐  ┌──────────────────────────┐ │ │
+│  │  │ IBotManager   │  │ IStrategy     │  │ IHyperliquidAdapter       │ │ │
+│  │  │ (gestionar    │  │ (ejecutar     │  │ (puerto exchange:          │ │ │
+│  │  │  bots)        │  │  estrategia)  │  │  Real o Paper)            │ │ │
+│  │  └───────────────┘  └───────────────┘  └──────────────────────────┘ │ │
+│  └────────────────────────────────┬─────────────────────────────────────┘ │
+│                                   │                                        │
+│  ┌────────────────────────────────▼─────────────────────────────────────┐ │
+│  │                      LÓGICA DE NEGOCIO (Core)                       │ │
+│  │  ┌─────────────────────────────────────────────────────────────────┐│ │
+│  │  │ Orchestrator / Bot Engine (ciclo Data → Strategy → Risk →      ││ │
+│  │  │   Execution → Notification)              [PENDIENTE]            ││ │
+│  │  └─────────────────────────────────────────────────────────────────┘│ │
+│  │  ┌─────────────────────────────────────────────────────────────────┐│ │
+│  │  │ StrategyManager (registry dinámico + reload)                   ││ │
+│  │  │   cargado desde strategies/*.py vía pkgutil + watchfiles       ││ │
+│  │  └─────────────────────────────────────────────────────────────────┘│ │
+│  │  ┌─────────────────────────────────────────────────────────────────┐│ │
+│  │  │ RiskManager (kill switch, límites, validación) [PENDIENTE]      ││ │
+│  │  └─────────────────────────────────────────────────────────────────┘│ │
+│  │  ┌─────────────────────────────────────────────────────────────────┐│ │
+│  │  │ Auth (JWT + Fernet cipher) [PENDIENTE]                         ││ │
+│  │  └─────────────────────────────────────────────────────────────────┘│ │
+│  └────────────────────────────────┬─────────────────────────────────────┘ │
+│                                   │                                        │
+│  ┌────────────────────────────────▼─────────────────────────────────────┐ │
+│  │                     ADAPTADORES (Infraestructura)                   │ │
+│  │  ┌──────────────────────┐  ┌──────────────────────┐  ┌───────────┐ │ │
+│  │  │ HyperliquidAdapter   │  │ DatabaseAdapter      │  │Notifica-  │ │ │
+│  │  │   Real + Paper       │  │ Postgres · Redis     │  │ciones     │ │ │
+│  │  │   (httpx + WS)       │  │ (SQLAlchemy async)   │  │(Telegram) │ │ │
+│  │  └──────────────────────┘  └──────────────────────┘  └───────────┘ │ │
+│  └─────────────────────────────────────────────────────────────────────┘ │
+└───────────────────────────────────────────────────────────────────────────┘
+                                    │              │
+                                    ▼              ▼
+                          ┌─────────────────┐  ┌──────────┐
+                          │  HYPERLIQUID    │  │ Postgres │
+                          │  DEX (REST+WS)  │  │  + Redis │
+                          └─────────────────┘  └──────────┘
+
+
+═══════════════════════════════════════════════════════════════════════════
+CROSS-CUTTING CONCERNS (afectan a todas las capas)
+═══════════════════════════════════════════════════════════════════════════
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│ STRUCTLOG (logging estructurado)                                         │
+│   src/core/logging.py                                                    │
+│   - Dev: consola con colores + timestamp ISO                             │
+│   - Prod: JSON por línea                                                 │
+│   - Cada log lleva: app_env, level, logger, timestamp, contexto          │
+│   - Contexto multi-tenant: user_id, bot_id, request_id                   │
+└──────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│ PROMETHEUS (métricas)                                                    │
+│   GET /metrics · prometheus-fastapi-instrumentator                       │
+│   - http_requests_total{method,handler,status}                           │
+│   - http_request_duration_seconds{...}                                   │
+│   - Métricas personalizadas (TODO): hl_bots_active, hl_orders_placed     │
+└──────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│ WATCHFILES (hot-reload de plugins)                                       │
+│   strategies/watcher.py → StrategyManager.reload()                       │
+│   - asyncio nativo (no bloquea event loop)                               │
+│   - Debounce 500 ms                                                       │
+│   - Bots activos NO se recargan (decisión intencional)                   │
+└──────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│ ALEMBIC (migraciones async)                                              │
+│   alembic/env.py con async_engine_from_config                            │
+│   - DATABASE_URL desde .env (vía pydantic-settings)                      │
+│   - Migración inicial aplicada: c9ce4e4ba658                              │
+└──────────────────────────────────────────────────────────────────────────┘
+
+═══════════════════════════════════════════════════════════════════════════
+LEYENDA
+═══════════════════════════════════════════════════════════════════════════
+
+    [OK]      = implementado y verificado
+    [PENDIENTE] = diseño listo, falta código (ver doc específico)
+    Bloque    = un componente (puede ser 1+ archivos)
+
+═══════════════════════════════════════════════════════════════════════════
+ENDPOINTS BACKEND (estado actual)
+═══════════════════════════════════════════════════════════════════════════
+
+    GET  /health                OK  Estado + estrategias cargadas
+    GET  /strategies            OK  Lista estrategias registradas
+    POST /strategies/reload     OK  Recarga manual del manager
+    GET  /metrics               OK  Prometheus
+    GET  /docs                  OK  Swagger UI
+    GET  /redoc                 OK  Documentación alternativa
+
+    POST /auth/register         PEND  Crear usuario
+    POST /auth/login            PEND  Login → JWT
+    GET  /auth/me               PEND  Usuario actual
+    POST /bots                  PEND  Crear bot
+    GET  /bots                  PEND  Listar bots del user
+    POST /bots/{id}/start       PEND  Arrancar bot
+    POST /bots/{id}/stop        PEND  Detener bot
+    WS   /ws/bots/{id}          PEND  Estado en vivo del bot

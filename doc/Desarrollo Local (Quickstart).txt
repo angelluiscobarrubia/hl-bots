@@ -1,0 +1,171 @@
+Desarrollo Local (Quickstart)
+=============================
+
+Pasos exactos para arrancar el stack completo en una máquina nueva, asumiendo Linux + Python 3.10+ + Node 20+ + Docker.
+
+────────────────────────────────────────────────────────────────────────
+0. REQUISITOS PREVIOS
+────────────────────────────────────────────────────────────────────────
+
+    - Python ≥ 3.10           (python --version)
+    - Poetry ≥ 1.8            (pip install poetry)
+    - Node ≥ 20               (node --version)
+    - Docker + Docker Compose (docker --version)
+    - 2 GB RAM libres         (Postgres + Redis + backend + frontend)
+
+────────────────────────────────────────────────────────────────────────
+1. CLONAR Y ENTRAR
+────────────────────────────────────────────────────────────────────────
+
+    git clone <repo>
+    cd hl-bots
+
+────────────────────────────────────────────────────────────────────────
+2. VARIABLES DE ENTORNO
+────────────────────────────────────────────────────────────────────────
+
+    cp .env.example .env
+
+    # Generar claves reales (no commitear .env)
+    python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    # → pegar el resultado en .env como MASTER_ENCRYPTION_KEY=
+
+    python -c "import secrets; print(secrets.token_urlsafe(64))"
+    # → pegar en .env como JWT_SECRET=
+
+────────────────────────────────────────────────────────────────────────
+3. LEVANTAR POSTGRES + REDIS
+────────────────────────────────────────────────────────────────────────
+
+Opción A · Docker directo (recomendado para dev):
+
+    docker run -d --name hl_postgres \
+      -e POSTGRES_USER=admin -e POSTGRES_PASSWORD=securepass \
+      -e POSTGRES_DB=bot_platform \
+      -p 5432:5432 -v pg_data:/var/lib/postgresql/data \
+      postgres:15
+
+    docker run -d --name hl_redis \
+      -p 6379:6379 -v redis_data:/data \
+      redis:7-alpine
+
+Opción B · docker compose (cuando exista Dockerfile maduro):
+
+    docker compose up -d postgres redis
+
+Verificar:
+    docker ps --filter name=hl_
+    # → deben aparecer hl_postgres y hl_redis en estado "Up"
+
+────────────────────────────────────────────────────────────────────────
+4. BACKEND
+────────────────────────────────────────────────────────────────────────
+
+    cd backend
+    poetry install                  # instala ~77 paquetes
+    poetry run alembic upgrade head # aplica migraciones
+    poetry run uvicorn src.main:app --reload --port 8000
+
+Verificación rápida:
+    curl http://localhost:8000/health
+    # → {"status":"ok","service":"hyperliquid-bot-platform",...}
+
+    curl http://localhost:8000/strategies
+    # → {"available":["MovingAverageCrossover"],"count":1}
+
+Endpoints útiles:
+    http://localhost:8000/docs        OpenAPI / Swagger UI
+    http://localhost:8000/redoc       Documentación alternativa
+    http://localhost:8000/metrics     Prometheus
+
+────────────────────────────────────────────────────────────────────────
+5. FRONTEND (en otra terminal)
+────────────────────────────────────────────────────────────────────────
+
+    cd frontend
+    npm install                       # instala ~400 paquetes
+    npm run dev                       # arranca Vite en :5173
+
+Abrir: http://localhost:5173
+
+El frontend hace proxy de /api → http://localhost:8000 (definido en vite.config.ts),
+así que el dashboard habla con el backend sin CORS.
+
+────────────────────────────────────────────────────────────────────────
+6. TESTING
+────────────────────────────────────────────────────────────────────────
+
+Backend:
+    cd backend
+    poetry run pytest                          # corre tests + coverage
+    poetry run pytest --cov=src --cov-report=html  # reporte HTML en htmlcov/
+    poetry run ruff check .                    # linter
+    poetry run ruff format .                   # formatter
+    poetry run mypy src/                       # type-checker
+
+Frontend:
+    cd frontend
+    npm run typecheck        # tsc --noEmit
+    npm run lint             # eslint
+    npm run test             # vitest
+    npm run build            # tsc + vite build
+
+Hooks de git (en raíz):
+    pre-commit install       # instala los hooks
+    pre-commit run --all-files
+
+────────────────────────────────────────────────────────────────────────
+7. CREAR UNA NUEVA MIGRACIÓN
+────────────────────────────────────────────────────────────────────────
+
+Tras modificar modelos en src/core/models.py:
+
+    cd backend
+    poetry run alembic revision --autogenerate -m "add users table"
+    poetry run alembic upgrade head       # aplicar
+    poetry run alembic downgrade -1       # rollback última
+
+────────────────────────────────────────────────────────────────────────
+8. AÑADIR UNA NUEVA ESTRATEGIA
+────────────────────────────────────────────────────────────────────────
+
+    1. Crear backend/strategies/mi_estrategia.py
+    2. Definir clase que herede de BaseStrategy
+    3. Implementar analyze() y get_required_params()
+    4. Guardar el archivo
+
+El StrategiesWatcher detecta el cambio en <1 s y el StrategyManager la registra.
+Aparece automáticamente en:
+    - GET /strategies
+    - GET /strategies/reload
+    - Frontend en /strategies
+
+IMPORTANTE: los bots activos siguen con la clase anterior. Reiniciar el bot desde la UI para aplicar.
+
+────────────────────────────────────────────────────────────────────────
+9. DIAGNÓSTICO
+────────────────────────────────────────────────────────────────────────
+
+Si algo no funciona:
+
+    # Ver logs del backend (con colores y timestamps)
+    poetry run uvicorn src.main:app --reload --log-level info
+
+    # Verificar imports
+    poetry run python -c "from src.main import app; print('OK')"
+
+    # Conectar a Postgres
+    docker exec -it hl_postgres psql -U admin -d bot_platform
+
+    # Conectar a Redis
+    docker exec -it hl_redis redis-cli
+
+    # Ver estado de migraciones
+    poetry run alembic current
+
+────────────────────────────────────────────────────────────────────────
+TIEMPO ESTIMADO
+────────────────────────────────────────────────────────────────────────
+
+    - Stack limpio: ~10 min (descargas + poetry install + npm install)
+    - Stack caliente: ~30 s (arrancar containers + uvicorn + vite)

@@ -1,0 +1,148 @@
+Gestión de API Keys (Multiusuario + Seguridad)
+==============================================
+
+Las claves no pertenecen al código base: pertenecen al contexto de ejecución.
+Nunca se persisten en texto plano. Nunca se loggean. Nunca se exponen en errores.
+
+────────────────────────────────────────────────────────────────────────
+FLUJO COMPLETO
+────────────────────────────────────────────────────────────────────────
+
+    1. Usuario crea un bot desde la UI
+           └── envía api_key + api_secret (o firma) por HTTPS
+                  └── el backend las recibe y las VALIDA
+                         └── las CIFRA con Fernet (cryptography)
+                                └── las guarda en Postgres (ciphertext)
+                                       └── asociadas a bot_id + user_id
+
+    2. Orchestrator arranca ese bot
+           └── pide al DatabaseAdapter la clave descifrada EXCLUSIVAMENTE en RAM
+                  └── se la pasa al constructor del HyperliquidAdapter en ese instante
+                         └── el adapter vive mientras el bot esté activo
+                                └── al detener el bot, la referencia en RAM se pierde
+
+    3. Nunca se escribe en:
+           - .env del código
+           - logs
+           - respuestas HTTP (ni siquiera en errores)
+           - backups sin cifrar
+
+────────────────────────────────────────────────────────────────────────
+DETALLE TÉCNICO · CIFRADO
+────────────────────────────────────────────────────────────────────────
+
+Librería: cryptography (Fernet)
+    Fernet = AES-128-CBC + HMAC-SHA256 + timestamp, base64-urlsafe
+    Simétrico: misma clave para cifrar y descifrar.
+
+Clave Maestra (MASTER_ENCRYPTION_KEY):
+    - 32 bytes url-safe base64
+    - Generada UNA vez por despliegue:
+        python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    - Guardada en variable de entorno del servidor (.env en el host)
+    - NUNCA en el código, NUNCA en el repo, NUNCA en logs
+    - En producción: venir de un secret manager (Vault, AWS Secrets Manager, etc.)
+
+Carga al arrancar (src/core/config.py):
+    master_encryption_key: str = Field(...)
+    # Validada por Pydantic al instanciar Settings
+
+Servicio de cifrado (src/adapters/security/cipher.py, PENDIENTE):
+    from cryptography.fernet import Fernet
+    from src.core.config import settings
+
+    class Cipher:
+        def __init__(self) -> None:
+            self._fernet = Fernet(settings.master_encryption_key.encode())
+
+        def encrypt(self, plaintext: str) -> str:
+            return self._fernet.encrypt(plaintext.encode()).decode()
+
+        def decrypt(self, ciphertext: str) -> str:
+            return self._fernet.decrypt(ciphertext.encode()).decode()
+
+Uso:
+    cipher = Cipher()
+    encrypted = cipher.encrypt(user_api_key)         # guardar en DB
+    plaintext = cipher.decrypt(encrypted)             # solo en RAM al arrancar bot
+
+Modelo DB (PENDIENTE, src/core/models):
+    class ApiKey(Base, TimestampMixin):
+        __tablename__ = "api_keys"
+        id: Mapped[int] = mapped_column(primary_key=True)
+        user_id: Mapped[str] = mapped_column(String, index=True)
+        bot_id: Mapped[str] = mapped_column(String, unique=True)
+        encrypted_key: Mapped[str] = mapped_column(Text)
+        encrypted_secret: Mapped[str] = mapped_column(Text)
+        # nunca el plaintext
+
+────────────────────────────────────────────────────────────────────────
+AUTENTICACIÓN DE USUARIOS · JWT
+────────────────────────────────────────────────────────────────────────
+
+Librería: python-jose[cryptography]
+    - Login con email + password → devuelve JWT firmado
+    - JWT contiene: user_id, exp (expiración), iat (issued at)
+    - Firmado con HS256 + JWT_SECRET (de .env)
+
+Librería: passlib[bcrypt]
+    - Hash de passwords con bcrypt (no se guarda plaintext)
+
+Flujo (PENDIENTE, src/api/routes/auth_routes.py):
+    POST /auth/register    {email, password}          → crea usuario
+    POST /auth/login       {email, password}          → {access_token, ...}
+    POST /auth/refresh     {refresh_token}            → nuevo access_token
+    GET  /auth/me          Authorization: Bearer ...  → {user_id, email, ...}
+
+JWT_SECRET:
+    - Generar con: python -c "import secrets; print(secrets.token_urlsafe(64))"
+    - En producción: rotar cada 90 días (TODO: mecanismo de rotación)
+
+Middleware de FastAPI (PENDIENTE, src/api/dependencies.py):
+    - Lee Authorization: Bearer ...
+    - Decodifica JWT
+    - Inyecta user_id en request.state
+    - structlog.bind_contextvars(user_id=...) → todos los logs llevan user_id
+
+────────────────────────────────────────────────────────────────────────
+PRINCIPIO: el Core nunca toca claves
+────────────────────────────────────────────────────────────────────────
+
+El Orchestrator:
+    ✗ NO lee claves de .env
+    ✗ NO lee claves de archivos de config
+    ✗ NO tiene claves hardcodeadas
+
+El Orchestrator:
+    ✓ Pide al DatabaseAdapter: "dame la clave del bot X"
+    ✓ Recibe un HyperliquidAdapter YA CONFIGURADO
+    ✓ El adapter se autocontiene (la clave está en su closure o atributo privado)
+
+Esto cumple la premisa "no modificar el código base para añadir un bot":
+    Añadir un bot = crear fila en DB + arrancar Orchestrator
+    Cambiar una clave = actualizar fila en DB + reiniciar Orchestrator
+    Nada de tocar código, nada de redeploy.
+
+────────────────────────────────────────────────────────────────────────
+AMENAZAS CONSIDERADAS
+────────────────────────────────────────────────────────────────────────
+
+    ✓ Robo de la DB: claves ilegibles sin MASTER_ENCRYPTION_KEY
+    ✓ Logs con claves: nunca se loggean las claves (ni enteras ni parciales)
+    ✓ Errores que exponen claves: cifrado/des cifrado solo en el adapter
+    ✓ Acceso a .env del servidor: requiere acceso root al host (defensa adicional: vault)
+    ✓ MITM en tránsito: HTTPS en producción (nginx/Caddy/Traefik)
+    ✗ Insider con acceso al código + DB: no mitigado (limitar accesos)
+    ✗ Side-channel timing attack: fuera del scope (Fernet usa AES-CBC, no vulnerable aquí)
+
+────────────────────────────────────────────────────────────────────────
+PENDIENTE
+────────────────────────────────────────────────────────────────────────
+
+    - Implementar src/adapters/security/cipher.py
+    - Implementar src/core/models/api_key.py
+    - Implementar src/api/routes/auth_routes.py
+    - Tests con cryptography fixtures (no usar claves reales en tests)
+    - Auditoría: loggear CUANDO se descifra una clave (quién, para qué bot)
+    - Rate limiting en /auth/login (prevenir fuerza bruta)
+    - 2FA opcional (TOTP) para usuarios premium

@@ -1,0 +1,198 @@
+Stack Tecnológico Completo
+==========================
+
+Fuente única de verdad de todas las dependencias del proyecto. Mantener sincronizado con `backend/pyproject.toml` y `frontend/package.json`.
+
+Gestionado con:
+    - Backend: Poetry (poetry.lock + pyproject.toml)
+    - Frontend: npm (package-lock.json + package.json)
+
+
+────────────────────────────────────────────────────────────────────────
+BACKEND · Python 3.10+
+────────────────────────────────────────────────────────────────────────
+
+CORE (API + ASGI)
+    fastapi ^0.115                → Framework web async
+    uvicorn[standard] ^0.30        → Servidor ASGI (con watchfiles + httptools)
+    python-multipart ^0.0.12       → Form data / file uploads
+
+DATOS Y VALIDACIÓN
+    pydantic ^2.5                  → Modelos de datos + validación
+    pydantic-settings ^2.1         → Carga tipada de .env (src/core/config.py)
+    orjson ^3.10                   → JSON 2-3x más rápido que stdlib
+    python-dotenv ^1.0             → Carga de .env (usado por pydantic-settings)
+
+PERSISTENCIA
+    sqlalchemy ^2.0                → ORM async
+    asyncpg ^0.29                  → Driver async PostgreSQL
+    redis ^5.0                     → Cliente async Redis (paper broker + cache)
+    alembic ^1.13                  → Migraciones de esquema async
+
+SEGURIDAD
+    cryptography ^42               → Fernet (cifrado API keys de usuarios)
+    python-jose[cryptography] ^3.3 → Tokens JWT para auth
+    passlib[bcrypt] ^1.7           → Hash de passwords
+
+COMUNICACIÓN
+    httpx ^0.27                    → Cliente HTTP async (Hyperliquid REST)
+    websockets ^12                 → Cliente WS nativo (Hyperliquid stream)
+    hyperliquid-python-sdk ^0.24   → SDK oficial de Hyperliquid
+
+ROBUSTEZ Y OBSERVABILIDAD
+    tenacity ^9.0                  → Reintentos con backoff exponencial
+    structlog ^24.4                → Logging estructurado JSON
+    prometheus-fastapi-instrumentator ^7.0 → Métricas en /metrics
+
+SCHEDULING Y HOT-RELOAD
+    apscheduler ^3.10              → Cron-like scheduling de bots
+    watchfiles ^0.24               → Detección de cambios en strategies/
+    uvloop ^0.21                   → Event loop 2x más rápido (Linux/macOS)
+
+NOTIFICACIONES
+    python-telegram-bot ^21.6      → Bot de Telegram (alertas, fills, errores)
+
+
+DEV (backend)
+
+    ruff ^0.7                      → Linter + formatter (Rust, 10-100x más rápido que black+flake8)
+    mypy ^1.13                     → Type-checker estático
+    pytest ^8.0                    → Framework de testing
+    pytest-asyncio ^0.23           → Tests async (asyncio_mode=auto)
+    pytest-cov ^6.0                → Cobertura (umbral 60%, branch=True)
+    respx ^0.21                    → Mock de httpx (testear Hyperliquid sin red)
+    freezegun ^1.5                 → Mock de datetime (testear RSI/MA)
+    faker ^30.0                    → Generación de datos falsos
+    factory-boy ^3.3               → Fixtures complejas (Bot, Order)
+    pre-commit ^4.0                → Hooks de git (ruff + mypy + hygiene)
+    ipython ^8.27                  → REPL mejorado para debugging
+
+
+────────────────────────────────────────────────────────────────────────
+FRONTEND · Node 22+
+────────────────────────────────────────────────────────────────────────
+
+CORE
+    react ^18.3
+    react-dom ^18.3
+    react-router-dom ^6.27         → Routing SPA
+
+BUILD
+    vite ^5.4                      → Dev server + bundler
+    @vitejs/plugin-react ^4.3
+    typescript ^5.6                → Tipado estático (decisión: TS > JS)
+
+ESTILOS
+    tailwindcss ^3.4               → Utility-first CSS
+    daisyui ^4.12                  → Componentes preconstruidos sobre Tailwind
+    postcss ^8.4
+    autoprefixer ^10.4
+
+ESTADO Y DATA
+    zustand ^4.5                   → Estado global (vs Redux: menos boilerplate)
+    @tanstack/react-query ^5.59    → Server state + caché + reintentos
+    axios ^1.7                     → Cliente HTTP con interceptores
+    zod ^3.23                      → Validación runtime (espejo de Pydantic)
+
+CHARTS
+    lightweight-charts ^4.2        → Gráficos financieros OHLC (lib de TradingView)
+
+TESTING
+    vitest ^2.1                    → Test runner (compatible con config de Vite)
+    @testing-library/react ^16
+    @testing-library/jest-dom ^6.5
+    jsdom ^25
+
+CALIDAD
+    eslint ^8.57
+    @typescript-eslint/parser ^8.8
+    @typescript-eslint/eslint-plugin ^8.8
+    eslint-plugin-react-hooks ^4.6
+    prettier ^3.3                  → Formatter
+    prettier-plugin-tailwindcss    → Ordena clases de Tailwind
+
+
+────────────────────────────────────────────────────────────────────────
+INFRAESTRUCTURA
+────────────────────────────────────────────────────────────────────────
+
+CONTENEDORES
+    PostgreSQL 15-alpine           → DB principal (bots, users, órdenes, configuración)
+    Redis 7-alpine                 → Cache + paper broker (balance virtual)
+
+ORQUESTACIÓN
+    Docker Compose                 → postgres + redis + migrate + backend
+
+MIGRACIONES
+    Alembic (async, autogenerate)  → Versionado de esquema
+
+CI/CD (futuro)
+    pre-commit                     → Hooks locales
+    GitHub Actions (por definir)   → CI con ruff + mypy + pytest + vitest
+
+
+────────────────────────────────────────────────────────────────────────
+DECISIONES CLAVE
+────────────────────────────────────────────────────────────────────────
+
+1. Backend async end-to-end
+   - FastAPI + SQLAlchemy async + asyncpg + httpx + uvicorn
+   - uvloop en Linux/macOS para +100% throughput
+   - Permite miles de bots concurrentes en un solo proceso
+
+2. Logging estructurado
+   - structlog emite JSON en producción, consola coloreada en dev
+   - Cada log lleva: timestamp ISO, nivel, módulo, app_env, contexto (bot_id, user_id)
+   - Crucial para multi-tenant: auditar qué bot/user hizo qué orden
+
+3. Pydantic v2 + Pydantic Settings
+   - Validación de entrada en endpoints (request/response)
+   - Configuración tipada desde .env con validación al arranque
+   - Settings cacheados con @lru_cache (singleton)
+
+4. ruff en lugar de black + flake8
+   - Una sola herramienta, escrita en Rust
+   - 10-100x más rápida
+   - Sustituye: black (format) + flake8 (lint) + isort (imports) + pyupgrade + bugbear + …
+
+5. TypeScript en lugar de JavaScript
+   - Tipos compartidos conceptualmente con Pydantic del backend
+   - Mejor autocomplete para IA y humanos
+   - Detecta errores en tiempo de compilación
+
+6. DaisyUI > Shadcn/ui
+   - Plugin de Tailwind, no requiere copiar/pegar componentes
+   - El agente IA escribe <button class="btn btn-primary"> y funciona
+   - Temas: dark por defecto (ideal para dashboard de trading)
+
+7. lightweight-charts > recharts
+   - Librería oficial de TradingView
+   - Optimizada para series temporales financieras (OHLC, candlesticks)
+   - Mucho más rápida con miles de puntos
+
+
+────────────────────────────────────────────────────────────────────────
+VERSIONES ACTUALES (al 2026-08-09)
+────────────────────────────────────────────────────────────────────────
+
+    poetry.lock generado con Poetry 2.4
+    backend: 77 paquetes instalados (producción + dev)
+    frontend: 18 runtime + 16 devDependencies
+
+    Python: 3.10.12 (mínimo 3.10)
+    Node: 22.22.2 (recomendado 20+)
+
+
+────────────────────────────────────────────────────────────────────────
+CÓMO AÑADIR UNA DEPENDENCIA
+────────────────────────────────────────────────────────────────────────
+
+Backend:
+    poetry add nombre-paquete
+    poetry add --group dev nombre-paquete
+
+Frontend:
+    npm install nombre-paquete
+    npm install --save-dev nombre-paquete
+
+Después: actualizar este documento para mantenerlo sincronizado.

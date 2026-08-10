@@ -1,0 +1,153 @@
+Elección de UI (Orientado a Agente IA y Ahorro de Tokens)
+=========================================================
+
+Criterio rector: el agente IA (y los humanos) deben ser productivos desde el
+prompt 1. Cada librería se eligió pensando en "menos imports, menos boilerplate,
+más código útil por línea de prompt".
+
+────────────────────────────────────────────────────────────────────────
+DECISIÓN FINAL: React + Vite + TypeScript + TailwindCSS + DaisyUI
+────────────────────────────────────────────────────────────────────────
+
+    REACT 18 (no 19 aún — ecosistema más estable)
+        Componentes funcionales + hooks, sin clases.
+        El prompt del agente se mantiene conciso:
+            export default function BotCard({ bot }: { bot: Bot }) { ... }
+
+    VITE 5 (no Next.js, no CRA)
+        - Dev server con HMR instantáneo (<100 ms)
+        - Build de producción con Rollup (más rápido que Webpack)
+        - Proxy integrado /api → :8000 (vite.config.ts) → cero CORS en dev
+        - Sin configuración de babel/webpack manual
+        - Soporta Vitest con la misma config → tests sin setup extra
+
+    TYPESCRIPT 5 (no JavaScript)
+        - Detección de errores en compile-time (vs runtime en JS)
+        - Mejor autocomplete para IA y humanos
+        - El backend usa Pydantic v2 → espejo conceptual de tipos en el front
+        - Config: strict + noUncheckedIndexedAccess (defensivo)
+        - Alias de imports: @/components/...  → igual que Next.js
+
+    TAILWINDCSS 3 (no CSS-in-JS, no CSS modules)
+        - Las IAs generan clases utilitarias mucho mejor que CSS custom
+        - tree-shaking automático (solo se envía el CSS usado)
+        - JIT compilation (cualquier valor funciona: bg-[#1a1a1a])
+
+    DAISYUI 4 (no Shadcn/ui, no MUI, no Chakra)
+        - Plugin de Tailwind: añade clases semánticas (btn, card, modal)
+        - El agente escribe <button class="btn btn-primary">Iniciar</button>
+          y se ve profesional sin importar 5 archivos
+        - Temas: dark por defecto (idóneo para dashboard de trading)
+        - Componentes: navbar, drawer, modal, table, alert, badge, stat…
+        - Sin dependencias de Radix ni Portals (más simple que Shadcn)
+
+    ZUSTAND 4 (no Redux, no Context API)
+        - Sintaxis mínima:
+            const useStore = create((set) => ({
+              count: 0,
+              inc: () => set((s) => ({ count: s.count + 1 })),
+            }))
+        - Las IAs lo manejan a la primera (Redux requiere actions/reducers/store)
+        - Para estado global compartido (usuario, bots activos)
+        - Para estado local: useState/useReducer (no abusar de Zustand)
+
+    REACT QUERY 5 (no fetch directo, no SWR)
+        - Server state (bots, strategies, balances) con caché + reintentos
+        - Invalidación por key: bots en /bots, estrategia en /strategies
+        - Refetch automático al volver a la pestaña
+        - Mutations con optimistic updates (próximamente)
+
+    AXIOS (no fetch nativo)
+        - Interceptores globales para auth tokens
+        - Cancelación de requests
+        - Manejo centralizado de errores (en services/api.ts)
+
+    ZOD (no Yup, no Joi)
+        - Validación runtime de respuestas del backend
+        - Misma sintaxis que Pydantic del backend → homogeneidad
+        - Tipos TypeScript inferidos: type Bot = z.infer<typeof BotSchema>
+
+    LIGHTWEIGHT-CHARTS 4 (no recharts, no Chart.js)
+        - Librería oficial de TradingView
+        - Optimizada para series temporales financieras (OHLC, candlesticks)
+        - Mucho más rápida con miles de puntos (canvas, no SVG)
+        - Drawdown, equity curve, indicadores técnicos
+        - API declarativa que la IA maneja bien
+
+    REACT ROUTER 6
+        - Routing SPA con <Routes> + <Route>
+        - NavLink con className dinámico para nav activo
+
+────────────────────────────────────────────────────────────────────────
+TESTING
+────────────────────────────────────────────────────────────────────────
+
+    VITEST 2 + @testing-library/react + jsdom
+        - Compatible con la config de Vite (mismo tsconfig, mismo alias)
+        - Setup mínimo en src/test-setup.ts (solo @testing-library/jest-dom)
+        - describe/it/expect sin imports (globals: true)
+
+────────────────────────────────────────────────────────────────────────
+CALIDAD
+────────────────────────────────────────────────────────────────────────
+
+    ESLINT 8 + @typescript-eslint + eslint-plugin-react-hooks
+        - Reglas estándar + hooks (crítico para React)
+        - --max-warnings 0 en CI
+
+    PRETTIER 3 + prettier-plugin-tailwindcss
+        - Formateo consistente
+        - El plugin ordena automáticamente las clases de Tailwind
+        - 100 caracteres por línea
+
+────────────────────────────────────────────────────────────────────────
+CONEXIÓN BACKEND
+────────────────────────────────────────────────────────────────────────
+
+Proxy en vite.config.ts:
+    /api → http://localhost:8000   (REST)
+    /ws  → ws://localhost:8000     (WebSocket)
+
+Esto evita problemas de CORS en desarrollo y mantiene el código del
+frontend limpio (siempre llama a /api/...).
+
+Cliente único: src/services/api.ts (axios + interceptores).
+
+Hook personalizado para WebSockets: src/hooks/useWebSocket.ts (TODO).
+
+────────────────────────────────────────────────────────────────────────
+AHORRO DE TOKENS · EJEMPLO COMPARATIVO
+────────────────────────────────────────────────────────────────────────
+
+Crear un botón "Iniciar Bot" con todo OK:
+
+    DaisyUI + Tailwind + TSX:
+        <button class="btn btn-primary" onClick={startBot}>
+          <span class="loading loading-spinner"></span>
+          Iniciar Bot
+        </button>
+
+    Shadcn/ui equivalente:
+        import { Button } from "@/components/ui/button"
+        import { Loader2 } from "lucide-react"
+        <Button disabled={loading} onClick={startBot}>
+          {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          Iniciar Bot
+        </Button>
+
+    → ~80% menos tokens con DaisyUI, misma calidad visual.
+
+
+────────────────────────────────────────────────────────────────────────
+DECISIONES DESCARTADAS (y por qué)
+────────────────────────────────────────────────────────────────────────
+
+    Shadcn/ui       Requiere copy-paste de componentes + modificar tailwind.config
+    MUI             Bundle de 100 KB+, theming custom complejo
+    Chakra UI       Similar a MUI, mismo problema
+    Redux           Demasiado boilerplate para nuestro caso
+    Next.js         SSR/RSC innecesario, complica proxy y dev server
+    Recharts        SVG lento con >1000 puntos; canvas es superior
+    JavaScript puro Menos seguro, más bugs, peor DX con IA
+    Svelte/Vue      Ecosistema de componentes menor, IA los maneja peor
+    CSS-in-JS       Runtime overhead, no encaja con tree-shaking de Tailwind

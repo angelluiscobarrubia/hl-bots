@@ -1,0 +1,140 @@
+[tool.poetry]
+name = "hyperliquid-bot-platform"
+version = "0.1.0"
+description = "Plataforma multi-bot para Hyperliquid"
+authors = ["Tu Nombre <tu@email.com>"]
+readme = "README.md"
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.10"
+# API & ASGI
+fastapi = "^0.115.0"
+uvicorn = {extras = ["standard"], version = "^0.30.0"}
+# Datos / validación
+pydantic = "^2.5.0"
+pydantic-settings = "^2.1.0"
+orjson = "^3.10.0"
+python-multipart = "^0.0.12"
+# Persistencia
+sqlalchemy = "^2.0.0"
+asyncpg = "^0.29.0"
+redis = "^5.0.0"
+alembic = "^1.13.0"
+# Seguridad
+cryptography = "^42.0.0"
+python-jose = {extras = ["cryptography"], version = "^3.3.0"}
+passlib = {extras = ["bcrypt"], version = "^1.7.4"}
+# HTTP/WS
+httpx = "^0.27.0"
+websockets = "^12.0"
+# Exchange SDK
+hyperliquid-python-sdk = "^0.24.0"
+# Robustez / async helpers
+tenacity = "^9.0.0"
+structlog = "^24.4.0"
+apscheduler = "^3.10.4"
+# Hot-reload de strategies/
+watchfiles = "^0.24.0"
+# Notificaciones
+python-telegram-bot = "^21.6"
+# Observabilidad
+prometheus-fastapi-instrumentator = "^7.0.0"
+# Config / env
+python-dotenv = "^1.0.0"
+
+[tool.poetry.group.dev.dependencies]
+# Linter + formatter
+ruff = "^0.7.0"
+# Type-checker
+mypy = "^1.13.0"
+# Testing
+pytest = "^8.0.0"
+pytest-asyncio = "^0.23.0"
+pytest-cov = "^6.0.0"
+respx = "^0.21.0"
+freezegun = "^1.5.0"
+faker = "^30.0.0"
+factory-boy = "^3.3.0"
+# Git hooks
+pre-commit = "^4.0.0"
+# REPL
+ipython = "^8.27.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+# ---------- Ruff ----------
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["alembic/versions", "dist", "build"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "N",   # pep8-naming
+    "S",   # flake8-security
+    "C4",  # flake8-comprehensions
+    "RET", # flake8-return
+    "SIM", # flake8-simplify
+]
+ignore = [
+    "S101",  # asserts ok en tests
+    "B008",  # llamadas a funciones en defaults (FastAPI Depends)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"backend/tests/**/*.py" = ["S101", "S106", "ARG", "PLR2004"]
+"backend/strategies/**/*.py" = ["N", "S"]  # código dinámico, menos estricto
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+# ---------- Mypy ----------
+[tool.mypy]
+python_version = "3.10"
+strict = false
+warn_unused_ignores = true
+warn_return_any = true
+disallow_untyped_defs = false
+plugins = ["pydantic.mypy"]
+exclude = ["alembic/", "tests/"]
+
+[[tool.mypy.overrides]]
+module = "hyperliquid.*"
+ignore_missing_imports = true
+
+# ---------- Pytest ----------
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "-ra -q --strict-markers --cov=src --cov=strategies --cov-report=term-missing"
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "integration: tests que requieren servicios externos (Postgres, Redis)",
+    "unit: tests unitarios rápidos",
+]
+
+# ---------- Coverage ----------
+[tool.coverage.run]
+source = ["src", "strategies"]
+omit = ["*/tests/*", "*/__init__.py"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]
+show_missing = true
+fail_under = 60
