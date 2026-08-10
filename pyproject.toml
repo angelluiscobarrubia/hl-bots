@@ -23,8 +23,9 @@ redis = "^5.0.0"
 alembic = "^1.13.0"
 # Seguridad
 cryptography = "^42.0.0"
-python-jose = {extras = ["cryptography"], version = "^3.3.0"}
-passlib = {extras = ["bcrypt"], version = "^1.7.4"}
+pyjwt = "^2.9.0"
+pwdlib = {extras = ["argon2"], version = "^0.2.0"}
+slowapi = "^0.1.9"
 # HTTP/WS
 httpx = "^0.27.0"
 websockets = "^12.0"
@@ -60,6 +61,8 @@ factory-boy = "^3.3.0"
 pre-commit = "^4.0.0"
 # REPL
 ipython = "^8.27.0"
+# Testing helpers
+aiosqlite = "^0.20.0"
 
 [build-system]
 requires = ["poetry-core"]
