@@ -89,6 +89,24 @@ npm run dev
 | POST | `/strategies/reload` | Recarga manual del manager |
 | GET | `/metrics` | Métricas Prometheus |
 | GET | `/docs` | OpenAPI / Swagger |
+| POST | `/auth/login` | Login (devuelve access + refresh token) |
+| POST | `/auth/refresh` | Renueva access token usando refresh token |
+| POST | `/auth/logout` | Logout (invalida tokens) |
+| GET | `/auth/me` | Perfil del usuario autenticado |
+| POST | `/auth/change-password` | Cambiar password propio |
+| POST | `/admin/users` | Crear usuario (solo admin) |
+| GET | `/admin/users` | Listar usuarios (solo admin) |
+| PATCH | `/admin/users/{id}` | Activar/desactivar usuario (solo admin) |
+| POST | `/admin/users/{id}/reset-password` | Resetear password (solo admin) |
+
+## Crear usuario admin
+
+```bash
+cd backend
+poetry run python -m src.scripts.create_admin --email [REDACTED] --password "tu-password-seguro"
+```
+
+El primer admin debe crearse por CLI. Después, puede crear más usuarios desde la UI en `/admin`.
 
 ## Comandos útiles
 
