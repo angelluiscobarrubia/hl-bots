@@ -5,6 +5,7 @@ import BotsPage from '@/pages/BotsPage';
 import StrategiesPage from '@/pages/StrategiesPage';
 import LoginPage from '@/pages/LoginPage';
 import AdminPage from '@/pages/AdminPage';
+import ApiKeysPage from '@/pages/ApiKeysPage';
 import ProtectedRoute from '@/components/ProtectedRoute';
 
 export default function App() {
@@ -52,15 +53,26 @@ export default function App() {
               Estrategias
             </NavLink>
             {user.role === 'admin' && (
-              <NavLink
-                to="/admin"
-                className={({ isActive }) =>
-                  `btn btn-sm ${isActive ? 'btn-primary' : 'btn-ghost'}`
-                }
-                data-testid="admin-navlink"
-              >
-                Admin
-              </NavLink>
+              <>
+                <NavLink
+                  to="/admin"
+                  className={({ isActive }) =>
+                    `btn btn-sm ${isActive ? 'btn-primary' : 'btn-ghost'}`
+                  }
+                  data-testid="admin-navlink"
+                >
+                  Admin
+                </NavLink>
+                <NavLink
+                  to="/admin/api-keys"
+                  className={({ isActive }) =>
+                    `btn btn-sm ${isActive ? 'btn-primary' : 'btn-ghost'}`
+                  }
+                  data-testid="api-keys-navlink"
+                >
+                  API Keys
+                </NavLink>
+              </>
             )}
             <div className="divider divider-horizontal mx-0"></div>
             <span className="text-sm opacity-70" data-testid="user-email">{user.email}</span>
@@ -109,6 +121,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <AdminPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/api-keys"
+            element={
+              <ProtectedRoute>
+                <ApiKeysPage />
               </ProtectedRoute>
             }
           />
