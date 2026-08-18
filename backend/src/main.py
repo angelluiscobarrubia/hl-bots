@@ -24,6 +24,7 @@ from src.api.routes import (
     auth_routes,
     bot_routes,
     risk_routes,
+    ws_routes,
 )
 from src.core.logging import configure_logging, get_logger
 from src.core.services.strategy_manager import strategy_manager
@@ -91,6 +92,7 @@ app.include_router(admin_routes.router)
 app.include_router(api_key_routes.router)
 app.include_router(bot_routes.router)
 app.include_router(risk_routes.router)
+app.include_router(ws_routes.router)
 
 # Métricas Prometheus en /metrics
 Instrumentator(

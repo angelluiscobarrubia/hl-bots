@@ -15,6 +15,7 @@ from src.core.entities.order import Order, OrderSide
 from src.core.logging import get_logger
 from src.core.ports.i_hyperliquid_adapter import IHyperliquidAdapter
 from src.core.ports.i_strategy import IStrategy
+from src.core.services.event_bus import EVENT_BOT_TRADE_EXECUTED, get_event_bus
 from src.core.services.risk_manager import RiskManager
 
 logger = get_logger(__name__)
@@ -105,6 +106,21 @@ class StrategyExecutor:
             self.bot.symbol, signal.action, quantity
         )
         self.trades.append(order)
+
+        get_event_bus().publish(
+            EVENT_BOT_TRADE_EXECUTED,
+            {
+                "user_id": int(self.bot.user_id),
+                "bot_id": int(self.bot.id),
+                "trade": {
+                    "symbol": order.symbol,
+                    "side": order.side.value,
+                    "price": order.price,
+                    "qty": order.quantity,
+                    "pnl": 0.0,
+                },
+            },
+        )
 
         if self.risk_manager is not None:
             await self.risk_manager.record_trade(order)
