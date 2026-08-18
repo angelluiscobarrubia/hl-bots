@@ -15,6 +15,7 @@ from src.core.entities.order import Order, OrderSide
 from src.core.logging import get_logger
 from src.core.ports.i_hyperliquid_adapter import IHyperliquidAdapter
 from src.core.ports.i_strategy import IStrategy
+from src.core.services.risk_manager import RiskManager
 
 logger = get_logger(__name__)
 
@@ -29,6 +30,8 @@ class StrategyExecutor:
         bot: Entidad del bot que se está ejecutando.
         adapter: Adapter de Hyperliquid (real o paper) sobre el que operar.
         strategy: Instancia de la estrategia a ejecutar.
+        risk_manager: RiskManager opcional que valida las órdenes antes de
+            ejecutarlas. Si es None, no se aplica validación de riesgo.
     """
 
     def __init__(
@@ -36,10 +39,12 @@ class StrategyExecutor:
         bot: Bot,
         adapter: IHyperliquidAdapter,
         strategy: IStrategy,
+        risk_manager: RiskManager | None = None,
     ) -> None:
         self.bot = bot
         self.adapter = adapter
         self.strategy = strategy
+        self.risk_manager = risk_manager
         self.trades: list[Order] = []
         self._running = False
 
@@ -55,6 +60,8 @@ class StrategyExecutor:
         2. Las convierte a ``market_data`` (última vela + historial).
         3. Pide una señal a la estrategia.
         4. Si la señal es BUY/SELL, calcula la cantidad y coloca la orden.
+        5. Si hay RiskManager, valida la orden antes de ejecutarla y registra
+           el trade tras un fill.
         """
         candles = await self.adapter.get_ohlcv(
             self.bot.symbol, interval="1m", limit=100
@@ -78,10 +85,29 @@ class StrategyExecutor:
         if quantity is None:
             quantity = await self._default_quantity(current_price)
 
+        if self.risk_manager is not None:
+            ok, reason = await self.risk_manager.validate_order(
+                self.bot.symbol, signal.action, quantity, current_price
+            )
+            if not ok:
+                logger.warning(
+                    "strategy_executor.order_rejected",
+                    bot_id=self.bot.id,
+                    symbol=self.bot.symbol,
+                    side=signal.action.value,
+                    quantity=quantity,
+                    price=current_price,
+                    reason=reason,
+                )
+                return
+
         order = await self.adapter.place_order(
             self.bot.symbol, signal.action, quantity
         )
         self.trades.append(order)
+
+        if self.risk_manager is not None:
+            await self.risk_manager.record_trade(order)
 
         logger.info(
             "strategy_executor.trade",

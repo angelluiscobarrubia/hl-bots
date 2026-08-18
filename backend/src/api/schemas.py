@@ -163,3 +163,27 @@ class StartBotRequest(BaseModel):
 
     api_key: str | None = None
     api_secret: str | None = None
+
+
+class RiskConfigSchema(BaseModel):
+    """Configuración de límites de riesgo de un bot."""
+
+    max_position_size_pct: float = Field(default=0.25, ge=0, le=1)
+    max_daily_loss_pct: float = Field(default=0.05, ge=0, le=1)
+    max_drawdown_pct: float = Field(default=0.15, ge=0, le=1)
+    max_open_positions: int = Field(default=3, ge=1)
+    stop_loss_pct: float | None = Field(default=None, ge=0, le=1)
+
+
+class RiskStatusResponse(BaseModel):
+    """Estado actual del risk manager de un bot."""
+
+    bot_id: int
+    starting_balance: float
+    current_balance: float
+    peak_balance: float
+    daily_pnl: float
+    drawdown_pct: float
+    open_positions: int
+    is_halted: bool
+    halt_reason: str | None = None

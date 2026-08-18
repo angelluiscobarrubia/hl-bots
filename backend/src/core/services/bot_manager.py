@@ -22,6 +22,7 @@ from src.core.models import Bot as BotModel
 from src.core.ports.i_bot_manager import IBotManager
 from src.core.ports.i_hyperliquid_adapter import IHyperliquidAdapter
 from src.core.services.api_key_service import ApiKeyPlaintext
+from src.core.services.risk_manager import RiskManager, clear_risk_manager
 from src.core.services.strategy_executor import StrategyExecutor
 from src.core.services.strategy_manager import strategy_manager
 
@@ -45,6 +46,7 @@ class BotManager(IBotManager):
         self._running_bots: dict[str, IHyperliquidAdapter] = {}
         self._executors: dict[str, StrategyExecutor] = {}
         self._executor_tasks: dict[str, asyncio.Task[None]] = {}
+        self._risk_managers: dict[str, RiskManager] = {}
 
     async def create_bot(
         self,
@@ -99,7 +101,10 @@ class BotManager(IBotManager):
 
             self._running_bots[str(db_bot.id)] = adapter
 
-            self._start_executor(entity, adapter)
+            risk_manager = RiskManager(entity, adapter)
+            self._risk_managers[str(db_bot.id)] = risk_manager
+
+            self._start_executor(entity, adapter, risk_manager)
 
             db_bot.status = BotStatus.RUNNING.value
             await session.commit()
@@ -114,6 +119,7 @@ class BotManager(IBotManager):
         self,
         entity: Bot,
         adapter: IHyperliquidAdapter,
+        risk_manager: RiskManager | None = None,
     ) -> None:
         """Crea el executor del bot, lo registra y arranca su bucle.
 
@@ -123,7 +129,12 @@ class BotManager(IBotManager):
         key = str(entity.id)
         try:
             strategy = strategy_manager.get_strategy(entity.strategy_name, entity.config)
-            executor = StrategyExecutor(bot=entity, adapter=adapter, strategy=strategy)
+            executor = StrategyExecutor(
+                bot=entity,
+                adapter=adapter,
+                strategy=strategy,
+                risk_manager=risk_manager,
+            )
             self._executors[key] = executor
             task = asyncio.create_task(executor.run_forever())
             self._executor_tasks[key] = task
@@ -145,6 +156,8 @@ class BotManager(IBotManager):
         key = str(bot_id)
         self._running_bots.pop(key, None)
         self._stop_executor(key)
+        self._risk_managers.pop(key, None)
+        clear_risk_manager(bot_id)
         async with self._session_factory() as session:
             db_bot = await session.get(BotModel, bot_id)
             if db_bot is None:
@@ -166,6 +179,10 @@ class BotManager(IBotManager):
     def get_executor(self, bot_id: int) -> StrategyExecutor | None:
         """Devuelve el executor activo del bot, o None si no está corriendo."""
         return self._executors.get(str(bot_id))
+
+    def get_risk_manager(self, bot_id: int) -> RiskManager | None:
+        """Devuelve el RiskManager activo del bot, o None si no está corriendo."""
+        return self._risk_managers.get(str(bot_id))
 
     async def get_bot_status(self, bot_id: int) -> BotStatus:
         """Devuelve RUNNING si el bot está activo en memoria; si no, el estado en DB."""
