@@ -1,9 +1,7 @@
 """Tests para el cipher Fernet."""
 
 import pytest
-
 from src.adapters.security.cipher import Cipher, CipherError
-
 
 # Generada una vez para los tests (no es secreta, solo para tests)
 TEST_KEY = "t4wB4FFEdWfid9H_FSyHK86s5uSK7GqEgg0uQbBGgb4="

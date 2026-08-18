@@ -3,7 +3,6 @@
 import pytest
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-
 from src.core.models import ApiKey
 
 
