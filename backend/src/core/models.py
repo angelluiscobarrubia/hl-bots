@@ -5,7 +5,7 @@ Los modelos concretos (Bot, User, Order, etc.) se irán añadiendo aquí.
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Integer, String, func
+from sqlalchemy import Boolean, DateTime, Integer, String, Text, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -49,4 +49,39 @@ class User(Base, TimestampMixin):
     auth_version: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     last_login_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+
+class ApiKey(Base, TimestampMixin):
+    """API key cifrada de un exchange (Hyperliquid) asociada a un bot y un usuario.
+
+    Nunca almacena plaintext. Solo ciphertext Fernet.
+    El descifrado ocurre exclusivamente en RAM al instanciar el adapter.
+    """
+
+    __tablename__ = "api_keys"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, index=True, nullable=False,
+        comment="FK lógica a users.id (sin FK para evitar acoplamiento)"
+    )
+    bot_id: Mapped[str] = mapped_column(
+        String(100), unique=True, index=True, nullable=False,
+        comment="Identificador del bot al que pertenece esta clave"
+    )
+    exchange: Mapped[str] = mapped_column(
+        String(50), nullable=False,
+        comment="Nombre del exchange (ej: 'hyperliquid')"
+    )
+    encrypted_api_key: Mapped[str] = mapped_column(
+        Text, nullable=False,
+        comment="API key cifrada con Fernet (base64-urlsafe)"
+    )
+    encrypted_api_secret: Mapped[str] = mapped_column(
+        Text, nullable=False,
+        comment="API secret cifrado con Fernet (base64-urlsafe)"
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False,
+        comment="Si False, la clave está revocada y no debe usarse"
     )
