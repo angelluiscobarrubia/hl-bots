@@ -1,0 +1,10 @@
+# Frontend .dockerignore — keeps the build context small.
+# Applies when building the frontend image with context ./frontend.
+
+node_modules
+dist
+.vite
+*.log
+dist-tsconfig-node
+.tsconfig-node-build
+*.tsbuildinfo
