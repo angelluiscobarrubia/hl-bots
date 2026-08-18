@@ -7,8 +7,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Integer, String, Text, func
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 class Base(DeclarativeBase):
@@ -119,3 +119,30 @@ class Bot(Base, TimestampMixin):
         String(20), default="stopped", nullable=False,
         comment="Estado: stopped | running | paused | error"
     )
+    trades: Mapped[list[Trade]] = relationship(
+        back_populates="bot", cascade="all, delete-orphan"
+    )
+
+
+class Trade(Base):
+    """Trade ejecutado por un bot (persistido para métricas)."""
+
+    __tablename__ = "trades"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    bot_id: Mapped[int] = mapped_column(
+        ForeignKey("bots.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    symbol: Mapped[str] = mapped_column(String(50), nullable=False)
+    side: Mapped[str] = mapped_column(String(10), nullable=False)  # "buy" | "sell"
+    price: Mapped[float] = mapped_column(Float, nullable=False)
+    quantity: Mapped[float] = mapped_column(Float, nullable=False)
+    pnl: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    executed_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, index=True, nullable=False
+    )
+
+    bot: Mapped[Bot] = relationship(back_populates="trades")

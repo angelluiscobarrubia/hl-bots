@@ -143,6 +143,7 @@ class BotManager(IBotManager):
                 adapter=adapter,
                 strategy=strategy,
                 risk_manager=risk_manager,
+                session_factory=self._session_factory,
             )
             self._executors[key] = executor
             task = asyncio.create_task(executor.run_forever())
