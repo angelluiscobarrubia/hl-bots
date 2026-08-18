@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
 class LoginRequest(BaseModel):
@@ -119,3 +120,46 @@ class ApiKeyListResponse(BaseModel):
 
     keys: list[ApiKeyOut]
     total: int
+
+
+class CreateBotRequest(BaseModel):
+    """Request para crear un bot."""
+
+    name: str = Field(..., min_length=1, max_length=100)
+    strategy: str = Field(..., min_length=1)
+    symbol: str = Field(default="BTC-USD")
+    is_paper: bool = Field(default=True)
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+class BotOut(BaseModel):
+    """Response con los datos de un bot."""
+
+    id: int
+    user_id: int
+    name: str
+    strategy_name: str
+    symbol: str
+    is_paper: bool
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class BotListResponse(BaseModel):
+    """Response para listado de bots."""
+
+    bots: list[BotOut]
+    total: int
+
+
+class StartBotRequest(BaseModel):
+    """Request para arrancar un bot.
+
+    ``api_key`` y ``api_secret`` son obligatorios si el bot no es paper.
+    """
+
+    api_key: str | None = None
+    api_secret: str | None = None
