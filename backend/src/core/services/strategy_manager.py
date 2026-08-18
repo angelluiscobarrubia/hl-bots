@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from src.core.logging import get_logger
+from src.core.ports.i_strategy import IStrategy
 
 logger = get_logger(__name__)
 
@@ -96,6 +97,22 @@ class StrategyManager:
                 f"Estrategia '{name}' no registrada. Disponibles: {self.available}",
             )
         return self._registry[name]
+
+    def get_strategy(self, name: str, config: dict[str, Any]) -> IStrategy:
+        """Instancia una estrategia registrada por nombre con la config dada.
+
+        Args:
+            name: Nombre de la estrategia (clase registrada).
+            config: Configuración específica de la instancia del bot.
+
+        Returns:
+            Una instancia de la estrategia.
+
+        Raises:
+            KeyError: Si la estrategia no está registrada.
+        """
+        cls = self.get(name)
+        return cls(config)
 
 
 # Singleton a nivel de módulo

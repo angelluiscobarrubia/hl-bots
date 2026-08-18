@@ -6,6 +6,7 @@ de Hyperliquid, y persiste el estado de cada bot en la base de datos.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
@@ -21,6 +22,8 @@ from src.core.models import Bot as BotModel
 from src.core.ports.i_bot_manager import IBotManager
 from src.core.ports.i_hyperliquid_adapter import IHyperliquidAdapter
 from src.core.services.api_key_service import ApiKeyPlaintext
+from src.core.services.strategy_executor import StrategyExecutor
+from src.core.services.strategy_manager import strategy_manager
 
 logger = get_logger(__name__)
 
@@ -40,6 +43,8 @@ class BotManager(IBotManager):
         self._session_factory = session_factory
         self._adapter_factory = adapter_factory
         self._running_bots: dict[str, IHyperliquidAdapter] = {}
+        self._executors: dict[str, StrategyExecutor] = {}
+        self._executor_tasks: dict[str, asyncio.Task[None]] = {}
 
     async def create_bot(
         self,
@@ -93,6 +98,9 @@ class BotManager(IBotManager):
                 adapter = self._adapter_factory.create_adapter(entity, plaintext)
 
             self._running_bots[str(db_bot.id)] = adapter
+
+            self._start_executor(entity, adapter)
+
             db_bot.status = BotStatus.RUNNING.value
             await session.commit()
             logger.info(
@@ -102,9 +110,41 @@ class BotManager(IBotManager):
             )
             return True
 
+    def _start_executor(
+        self,
+        entity: Bot,
+        adapter: IHyperliquidAdapter,
+    ) -> None:
+        """Crea el executor del bot, lo registra y arranca su bucle.
+
+        Si la estrategia no está registrada o falla al instanciarse, se
+        registra un warning y el bot arranca igualmente (sin ejecutar trades).
+        """
+        key = str(entity.id)
+        try:
+            strategy = strategy_manager.get_strategy(entity.strategy_name, entity.config)
+            executor = StrategyExecutor(bot=entity, adapter=adapter, strategy=strategy)
+            self._executors[key] = executor
+            task = asyncio.create_task(executor.run_forever())
+            self._executor_tasks[key] = task
+            logger.info(
+                "bot_manager.executor_started",
+                bot_id=entity.id,
+                strategy=entity.strategy_name,
+            )
+        except Exception:
+            logger.warning(
+                "bot_manager.executor_start_failed",
+                bot_id=entity.id,
+                strategy=entity.strategy_name,
+                exc_info=True,
+            )
+
     async def stop_bot(self, bot_id: int) -> bool:
         """Detiene el bot, lo quita de ``_running_bots`` y actualiza su estado."""
-        self._running_bots.pop(str(bot_id), None)
+        key = str(bot_id)
+        self._running_bots.pop(key, None)
+        self._stop_executor(key)
         async with self._session_factory() as session:
             db_bot = await session.get(BotModel, bot_id)
             if db_bot is None:
@@ -113,6 +153,19 @@ class BotManager(IBotManager):
             await session.commit()
             logger.info("bot_manager.stopped", bot_id=bot_id)
             return True
+
+    def _stop_executor(self, key: str) -> None:
+        """Detiene el executor del bot y cancela su tarea de bucle."""
+        executor = self._executors.pop(key, None)
+        if executor is not None:
+            executor.stop()
+        task = self._executor_tasks.pop(key, None)
+        if task is not None and not task.done():
+            task.cancel()
+
+    def get_executor(self, bot_id: int) -> StrategyExecutor | None:
+        """Devuelve el executor activo del bot, o None si no está corriendo."""
+        return self._executors.get(str(bot_id))
 
     async def get_bot_status(self, bot_id: int) -> BotStatus:
         """Devuelve RUNNING si el bot está activo en memoria; si no, el estado en DB."""
