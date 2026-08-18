@@ -14,6 +14,11 @@ from src.core.entities.bot import Bot
 from src.core.entities.order import Order, OrderSide
 from src.core.logging import get_logger
 from src.core.ports.i_hyperliquid_adapter import IHyperliquidAdapter
+from src.core.services.event_bus import (
+    EVENT_BOT_RISK_HALTED,
+    EVENT_BOT_RISK_UPDATED,
+    get_event_bus,
+)
 
 logger = get_logger(__name__)
 
@@ -168,6 +173,16 @@ class RiskManager:
         if balance > self._peak_balance:
             self._peak_balance = balance
 
+        status = await self.status()
+        get_event_bus().publish(
+            EVENT_BOT_RISK_UPDATED,
+            {
+                "user_id": int(self.bot.user_id),
+                "bot_id": int(self.bot.id),
+                "status": status,
+            },
+        )
+
     def halt(self, reason: str | None = None) -> None:
         """Detiene manualmente el trading del bot.
 
@@ -176,6 +191,14 @@ class RiskManager:
         """
         self._halted = True
         self._halt_reason = reason or "Manually halted"
+        get_event_bus().publish(
+            EVENT_BOT_RISK_HALTED,
+            {
+                "user_id": int(self.bot.user_id),
+                "bot_id": int(self.bot.id),
+                "reason": self._halt_reason,
+            },
+        )
         logger.warning("risk_manager.halted", bot_id=self.bot.id, reason=self._halt_reason)
 
     def resume(self) -> None:

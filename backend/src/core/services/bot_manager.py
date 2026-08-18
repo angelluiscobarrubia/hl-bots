@@ -22,6 +22,7 @@ from src.core.models import Bot as BotModel
 from src.core.ports.i_bot_manager import IBotManager
 from src.core.ports.i_hyperliquid_adapter import IHyperliquidAdapter
 from src.core.services.api_key_service import ApiKeyPlaintext
+from src.core.services.event_bus import EVENT_BOT_STATUS_CHANGED, get_event_bus
 from src.core.services.risk_manager import RiskManager, clear_risk_manager
 from src.core.services.strategy_executor import StrategyExecutor
 from src.core.services.strategy_manager import strategy_manager
@@ -108,6 +109,14 @@ class BotManager(IBotManager):
 
             db_bot.status = BotStatus.RUNNING.value
             await session.commit()
+            get_event_bus().publish(
+                EVENT_BOT_STATUS_CHANGED,
+                {
+                    "user_id": db_bot.user_id,
+                    "bot_id": db_bot.id,
+                    "status": BotStatus.RUNNING.value,
+                },
+            )
             logger.info(
                 "bot_manager.started",
                 bot_id=db_bot.id,
@@ -164,6 +173,14 @@ class BotManager(IBotManager):
                 raise BotNotFoundError(f"No existe bot con id={bot_id}")
             db_bot.status = BotStatus.STOPPED.value
             await session.commit()
+            get_event_bus().publish(
+                EVENT_BOT_STATUS_CHANGED,
+                {
+                    "user_id": db_bot.user_id,
+                    "bot_id": bot_id,
+                    "status": BotStatus.STOPPED.value,
+                },
+            )
             logger.info("bot_manager.stopped", bot_id=bot_id)
             return True
 

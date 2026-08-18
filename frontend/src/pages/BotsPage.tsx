@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useBotWebSocket } from '@/hooks/useWebSocket';
 import { apiClient } from '@/services/api';
 
 type Bot = {
@@ -71,6 +72,21 @@ export default function BotsPage() {
   const [startApiSecret, setStartApiSecret] = useState('');
   const [riskBotId, setRiskBotId] = useState<number | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const [haltAlert, setHaltAlert] = useState<{ botId: number; reason: string } | null>(null);
+
+  useBotWebSocket((msg) => {
+    if (msg.type === 'bot_status') {
+      queryClient.invalidateQueries({ queryKey: ['bots'] });
+    } else if (msg.type === 'trade') {
+      setToast(`Trade ${msg.trade.side} ${msg.trade.symbol} @ ${msg.trade.price}`);
+      window.setTimeout(() => setToast(null), 4000);
+    } else if (msg.type === 'risk_update') {
+      queryClient.invalidateQueries({ queryKey: ['risk', msg.bot_id] });
+    } else if (msg.type === 'risk_halt') {
+      setHaltAlert({ botId: msg.bot_id, reason: msg.reason });
+    }
+  });
 
   const { data: bots, isLoading, isError, error } = useQuery<Bot[]>({
     queryKey: ['bots'],
@@ -202,6 +218,12 @@ export default function BotsPage() {
       {actionError && (
         <div className="alert alert-error" data-testid="action-error">
           {actionError}
+        </div>
+      )}
+
+      {toast && (
+        <div className="alert alert-success" data-testid="trade-toast">
+          {toast}
         </div>
       )}
 
@@ -457,6 +479,26 @@ export default function BotsPage() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {haltAlert && (
+        <div className="modal modal-open" data-testid="halt-alert">
+          <div className="modal-box">
+            <h3 className="font-bold text-lg">Trading detenido</h3>
+            <p className="mt-2">
+              El bot {haltAlert.botId} ha detenido el trading: {haltAlert.reason}
+            </p>
+            <div className="modal-action">
+              <button
+                className="btn btn-primary"
+                onClick={() => setHaltAlert(null)}
+                data-testid="close-halt-alert"
+              >
+                Entendido
+              </button>
+            </div>
           </div>
         </div>
       )}

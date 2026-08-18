@@ -11,7 +11,15 @@ vi.mock('@/services/api', () => ({
   },
 }));
 
+vi.mock('@/hooks/useWebSocket', () => ({
+  useBotWebSocket: vi.fn(),
+}));
+
 import { apiClient } from '@/services/api';
+import { useBotWebSocket, type BotWsMessage } from '@/hooks/useWebSocket';
+
+const mockUseBotWebSocket = vi.mocked(useBotWebSocket);
+let wsOnUpdate: ((msg: BotWsMessage) => void) | null = null;
 
 const paperBot = {
   id: 1,
@@ -77,6 +85,11 @@ function renderWithProviders() {
 describe('BotsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    wsOnUpdate = null;
+    mockUseBotWebSocket.mockImplementation((cb: (msg: BotWsMessage) => void) => {
+      wsOnUpdate = cb;
+      return { data: null, send: vi.fn(), isConnected: false, error: null };
+    });
   });
 
   it('muestra loading mientras carga', () => {
@@ -218,6 +231,44 @@ describe('BotsPage', () => {
     fireEvent.click(screen.getByTestId('halt-bot'));
     await waitFor(() => {
       expect(apiClient.post).toHaveBeenCalledWith('/bots/2/risk/halt');
+    });
+  });
+
+  it('conecta el websocket al montar', () => {
+    vi.mocked(apiClient.get).mockResolvedValue({ data: { bots: [], total: 0 } });
+    renderWithProviders();
+    expect(mockUseBotWebSocket).toHaveBeenCalled();
+  });
+
+  it('invalida la query al recibir un cambio de estado', async () => {
+    vi.mocked(apiClient.get).mockResolvedValue({ data: { bots: [paperBot], total: 1 } });
+    renderWithProviders();
+    await waitFor(() => {
+      expect(screen.getByTestId('bot-row-1')).toBeInTheDocument();
+    });
+    const callsBefore = vi.mocked(apiClient.get).mock.calls.length;
+    expect(wsOnUpdate).not.toBeNull();
+    wsOnUpdate!({ type: 'bot_status', bot_id: 1, status: 'running', timestamp: 'x' });
+    await waitFor(() => {
+      expect(vi.mocked(apiClient.get).mock.calls.length).toBeGreaterThan(callsBefore);
+    });
+  });
+
+  it('muestra un toast al recibir un trade', async () => {
+    vi.mocked(apiClient.get).mockResolvedValue({ data: { bots: [paperBot], total: 1 } });
+    renderWithProviders();
+    await waitFor(() => {
+      expect(screen.getByTestId('bot-row-1')).toBeInTheDocument();
+    });
+    expect(wsOnUpdate).not.toBeNull();
+    wsOnUpdate!({
+      type: 'trade',
+      bot_id: 1,
+      trade: { symbol: 'BTC', side: 'buy', price: 50000, qty: 0.1, pnl: 100 },
+      timestamp: 'x',
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('trade-toast')).toBeInTheDocument();
     });
   });
 });
