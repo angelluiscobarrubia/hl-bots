@@ -3,6 +3,8 @@
 Los modelos concretos (Bot, User, Order, etc.) se irán añadiendo aquí.
 """
 
+from __future__ import annotations
+
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, Integer, String, Text, func
@@ -84,4 +86,36 @@ class ApiKey(Base, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(
         Boolean, default=True, nullable=False,
         comment="Si False, la clave está revocada y no debe usarse"
+    )
+
+
+class Bot(Base, TimestampMixin):
+    """Bot de trading configurado por un usuario."""
+
+    __tablename__ = "bots"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, index=True, nullable=False,
+        comment="FK lógica a users.id (sin FK para evitar acoplamiento)"
+    )
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    strategy_name: Mapped[str] = mapped_column(
+        String(100), nullable=False,
+        comment="Nombre del plugin de estrategia a usar"
+    )
+    symbol: Mapped[str] = mapped_column(
+        String(50), default="BTC-USD", nullable=False
+    )
+    is_paper: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False,
+        comment="True = paper trading, False = trading real"
+    )
+    config_json: Mapped[str] = mapped_column(
+        Text, default="{}", nullable=False,
+        comment="Configuración del bot en JSON (dict serializado)"
+    )
+    status: Mapped[str] = mapped_column(
+        String(20), default="stopped", nullable=False,
+        comment="Estado: stopped | running | paused | error"
     )
