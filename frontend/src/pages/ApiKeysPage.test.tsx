@@ -32,7 +32,7 @@ describe('ApiKeysPage', () => {
   });
 
   it('muestra loading mientras carga', () => {
-    vi.mocked(apiClient.get).mockReturnValue(new Promise(() => {}) as unknown);
+    vi.mocked(apiClient.get).mockReturnValue(new Promise(() => {}) as Promise<unknown>);
     renderWithProviders();
     expect(screen.getByText(/Cargando API keys/i)).toBeInTheDocument();
   });
