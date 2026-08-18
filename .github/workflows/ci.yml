@@ -1,0 +1,224 @@
+# Continuous Integration
+#
+# Runs on every push and pull request to `main` and feature branches.
+# Pipeline stages:
+#   1. backend-lint   — ruff static analysis
+#   2. backend-test   — pytest with PostgreSQL + Redis services
+#   3. frontend-lint  — eslint
+#   4. frontend-test  — vitest
+#   5. frontend-build — TypeScript check + Vite production build
+#   6. docker-build   — verify the backend Dockerfile builds
+#
+# All jobs run in parallel and are gated on nothing (they are independent),
+# so a failure in any job fails the whole workflow.
+
+name: CI
+
+on:
+  push:
+    branches: [main, "**"]
+  pull_request:
+    branches: [main]
+
+# Cancel superseded runs of the same workflow on the same ref to save CI time.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Backend lint: ruff over source and tests
+  # ---------------------------------------------------------------------------
+  backend-lint:
+    name: Backend lint (ruff)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          # Cache the Poetry virtualenv keyed on poetry.lock
+          cache: "poetry"
+          cache-dependency-path: poetry.lock
+
+      - name: Install Poetry
+        run: pip install poetry
+
+      # Only the dev group is needed for ruff — faster than a full install.
+      - name: Install dev dependencies
+        run: poetry install --no-interaction --no-ansi --only dev
+
+      - name: Run ruff
+        run: poetry run ruff check src/ tests/
+
+  # ---------------------------------------------------------------------------
+  # Backend tests: pytest with PostgreSQL + Redis services
+  # ---------------------------------------------------------------------------
+  backend-test:
+    name: Backend tests (pytest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    # PostgreSQL 16 for the app database
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: bot_platform
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      # Redis 7 for rate limiting
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      # Point the app at the ephemeral service containers
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/bot_platform
+      REDIS_URL: redis://localhost:6379/0
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "poetry"
+          cache-dependency-path: poetry.lock
+
+      - name: Install Poetry
+        run: pip install poetry
+
+      # Full install (main + dev) so pytest and all runtime deps are present.
+      - name: Install dependencies
+        run: poetry install --no-interaction --no-ansi
+
+      - name: Run tests
+        # --no-cov disables the coverage addopts baked into pyproject.toml
+        run: poetry run pytest tests/ --no-cov
+
+  # ---------------------------------------------------------------------------
+  # Frontend lint: eslint
+  # ---------------------------------------------------------------------------
+  frontend-lint:
+    name: Frontend lint (eslint)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          # Cache npm dependencies keyed on package-lock.json
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run eslint
+        run: npm run lint
+
+  # ---------------------------------------------------------------------------
+  # Frontend tests: vitest
+  # ---------------------------------------------------------------------------
+  frontend-test:
+    name: Frontend tests (vitest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run vitest
+        run: npm test -- --run
+
+  # ---------------------------------------------------------------------------
+  # Frontend build: type-check + Vite production build
+  # ---------------------------------------------------------------------------
+  frontend-build:
+    name: Frontend build (Vite)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build production bundle
+        run: npm run build
+
+  # ---------------------------------------------------------------------------
+  # Docker build: verify the backend Dockerfile builds successfully
+  # ---------------------------------------------------------------------------
+  docker-build:
+    name: Docker build (backend)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build backend image
+        uses: docker/build-push-action@v5
+        with:
+          # pyproject.toml/poetry.lock live at the repo root
+          context: .
+          file: backend/Dockerfile
+          # Build only — do not push in CI
+          push: false
+          load: true
+          tags: hl-backend:ci
+          # Reuse GitHub Actions cache across runs for faster builds
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

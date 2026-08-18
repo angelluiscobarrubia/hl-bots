@@ -1,0 +1,37 @@
+# Root .dockerignore — keeps the build context small and avoids leaking secrets.
+# Used when building the backend image with the repo root as context.
+
+# Git
+.git
+.gitignore
+.worktrees
+
+# Backend
+backend/.pytest_cache
+backend/.ruff_cache
+backend/.mypy_cache
+backend/**/__pycache__
+backend/**/*.pyc
+backend/.venv
+backend/venv
+
+# Frontend (not needed for the backend image)
+frontend/node_modules
+frontend/dist
+frontend/.vite
+
+# Secrets / env
+.env
+.env.*
+!.env.example
+
+# IDE / OS
+.idea
+.vscode
+*.swp
+.DS_Store
+
+# Cortex / opencode tooling
+.cortex
+.opencode
+opencode.json

@@ -1,0 +1,46 @@
+# Dependabot configuration
+#
+# Keeps dependencies up to date with weekly PRs:
+#   - Python (pip/poetry) dependencies
+#   - GitHub Actions
+#   - Docker base images (backend + frontend)
+#
+# Python and GitHub Actions updates are grouped into a single PR each.
+
+version: 2
+updates:
+  # Python dependencies (Poetry) — grouped into one PR
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    groups:
+      python-dependencies:
+        patterns:
+          - "*"
+
+  # GitHub Actions — grouped into one PR
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+
+  # Docker base images — backend
+  - package-ecosystem: "docker"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+
+  # Docker base images — frontend
+  - package-ecosystem: "docker"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5

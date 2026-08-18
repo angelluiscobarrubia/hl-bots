@@ -1,12 +1,25 @@
+# Complete docker-compose for the hl-bots platform.
+#
+# Services:
+#   postgres — PostgreSQL 16 (persistent data volume)
+#   redis    — Redis 7 (rate limiting)
+#   migrate  — runs Alembic migrations, then exits
+#   backend  — FastAPI app (depends on postgres + redis + migrate)
+#   frontend — nginx serving the React build
+#
+# Images are built locally and tagged with the ghcr.io names used by the CD
+# pipeline, so `docker compose up --build` produces the same images that get
+# pushed to the registry.
+
 version: '3.8'
 
 services:
   postgres:
-    image: postgres:15-alpine
+    image: postgres:16-alpine
     container_name: hl_postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-admin}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-securepass}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-bot_platform}
     ports:
       - "5432:5432"
@@ -17,6 +30,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - hl_net
 
   redis:
     image: redis:7-alpine
@@ -30,31 +45,38 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+    networks:
+      - hl_net
 
   migrate:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: backend/Dockerfile
+    image: ghcr.io/${GITHUB_REPOSITORY:-hl-bots}/backend:latest
     container_name: hl_migrate
     command: ["alembic", "upgrade", "head"]
     depends_on:
       postgres:
         condition: service_healthy
+    environment:
+      # Point the app at the postgres service container (not localhost).
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-bot_platform}
+      REDIS_URL: redis://redis:6379/0
     env_file:
       - .env
     restart: "no"
+    networks:
+      - hl_net
 
   backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: backend/Dockerfile
+    image: ghcr.io/${GITHUB_REPOSITORY:-hl-bots}/backend:latest
     container_name: hl_backend
-    command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
     ports:
       - "8000:8000"
-    volumes:
-      - ./backend:/app
-      - ./backend/strategies:/app/strategies
     depends_on:
       postgres:
         condition: service_healthy
@@ -62,9 +84,42 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-bot_platform}
+      REDIS_URL: redis://redis:6379/0
     env_file:
       - .env
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - hl_net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: ghcr.io/${GITHUB_REPOSITORY:-hl-bots}/frontend:latest
+    container_name: hl_frontend
+    ports:
+      - "80:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - hl_net
 
 volumes:
   pg_data:
   redis_data:
+
+networks:
+  hl_net:
+    driver: bridge
