@@ -50,7 +50,10 @@ export default function ApiKeysPage() {
       setActionError(null);
     },
     onError: (err: unknown) => {
-      setActionError(err?.response?.data?.detail ?? 'Error al crear API key');
+      setActionError(
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
+          'Error al crear API key',
+      );
     },
   });
 
@@ -62,7 +65,10 @@ export default function ApiKeysPage() {
       setActionError(null);
     },
     onError: (err: unknown) => {
-      setActionError(err?.response?.data?.detail ?? 'Error al desactivar API key');
+      setActionError(
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
+          'Error al desactivar API key',
+      );
     },
   });
 
@@ -165,7 +171,7 @@ export default function ApiKeysPage() {
       {isLoading && <div className="alert">Cargando API keys…</div>}
       {isError && (
         <div className="alert alert-error">
-          Error al cargar API keys: {(error as unknown)?.message ?? 'desconocido'}
+          Error al cargar API keys: {error?.message ?? 'desconocido'}
         </div>
       )}
 

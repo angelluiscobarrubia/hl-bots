@@ -34,7 +34,7 @@ describe('authStore', () => {
         user: { id: 1, email: 'a@b.com', role: 'user', is_active: true },
         must_change_password: false,
       },
-    } as any);
+    });
 
     await useAuthStore.getState().login('a@b.com', 'pw');
 
@@ -49,7 +49,7 @@ describe('authStore', () => {
     useAuthStore.setState({ accessToken: 'OLD_A', refreshToken: 'OLD_R' });
     vi.mocked(apiClient.post).mockResolvedValueOnce({
       data: { access_token: 'NEW_A', refresh_token: 'NEW_R', token_type: 'bearer' },
-    } as any);
+    });
 
     const ok = await useAuthStore.getState().refresh();
 

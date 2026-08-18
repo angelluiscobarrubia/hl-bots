@@ -33,7 +33,7 @@ describe('AdminPage', () => {
   });
 
   it('muestra estado de carga inicialmente', () => {
-    vi.mocked(apiClient.get).mockReturnValue(new Promise(() => {}) as any);
+    vi.mocked(apiClient.get).mockReturnValue(new Promise(() => {}) as Promise<unknown>);
     renderWithProviders();
     expect(screen.getByText(/Cargando usuarios/i)).toBeInTheDocument();
   });
@@ -44,7 +44,7 @@ describe('AdminPage', () => {
         { id: 1, email: 'admin@example.com', role: 'admin', is_active: true, must_change_password: false },
         { id: 2, email: 'user1@example.com', role: 'user', is_active: true, must_change_password: false },
       ],
-    } as any);
+    });
 
     renderWithProviders();
 
@@ -66,7 +66,7 @@ describe('AdminPage', () => {
   });
 
   it('abre formulario de creacion al hacer click en Nuevo usuario', async () => {
-    vi.mocked(apiClient.get).mockResolvedValueOnce({ data: [] } as any);
+    vi.mocked(apiClient.get).mockResolvedValueOnce({ data: [] });
 
     renderWithProviders();
 

@@ -42,8 +42,11 @@ export default function AdminPage() {
       setNewRole('user');
       setActionError(null);
     },
-    onError: (err: any) => {
-      setActionError(err?.response?.data?.detail ?? 'Error al crear usuario');
+    onError: (err: unknown) => {
+      setActionError(
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
+          'Error al crear usuario',
+      );
     },
   });
 
@@ -54,8 +57,11 @@ export default function AdminPage() {
       queryClient.invalidateQueries({ queryKey: ['admin-users'] });
       setActionError(null);
     },
-    onError: (err: any) => {
-      setActionError(err?.response?.data?.detail ?? 'Error al desactivar usuario');
+    onError: (err: unknown) => {
+      setActionError(
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
+          'Error al desactivar usuario',
+      );
     },
   });
 
@@ -67,8 +73,11 @@ export default function AdminPage() {
       setResetPassword('');
       setActionError(null);
     },
-    onError: (err: any) => {
-      setActionError(err?.response?.data?.detail ?? 'Error al resetear password');
+    onError: (err: unknown) => {
+      setActionError(
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
+          'Error al resetear password',
+      );
     },
   });
 
@@ -150,7 +159,7 @@ export default function AdminPage() {
       {isLoading && <div className="alert">Cargando usuarios…</div>}
       {isError && (
         <div className="alert alert-error">
-          Error al cargar usuarios: {(error as any)?.message ?? 'desconocido'}
+          Error al cargar usuarios: {error?.message ?? 'desconocido'}
         </div>
       )}
 
