@@ -23,6 +23,7 @@ from src.api.routes import (
     api_key_routes,
     auth_routes,
     bot_routes,
+    metrics_routes,
     risk_routes,
     ws_routes,
 )
@@ -91,6 +92,7 @@ app.include_router(auth_routes.router)
 app.include_router(admin_routes.router)
 app.include_router(api_key_routes.router)
 app.include_router(bot_routes.router)
+app.include_router(metrics_routes.router)
 app.include_router(risk_routes.router)
 app.include_router(ws_routes.router)
 

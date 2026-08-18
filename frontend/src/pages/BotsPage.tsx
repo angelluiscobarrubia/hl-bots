@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { useBotWebSocket } from '@/hooks/useWebSocket';
 import { apiClient } from '@/services/api';
 
@@ -62,6 +63,7 @@ function statusBadge(status: Bot['status']): string {
 
 export default function BotsPage() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
   const [newStrategy, setNewStrategy] = useState('sma_crossover');
@@ -317,6 +319,13 @@ export default function BotsPage() {
                     <span className={`badge ${statusBadge(b.status)}`}>{b.status}</span>
                   </td>
                   <td className="space-x-2">
+                    <button
+                      className="btn btn-sm btn-ghost"
+                      onClick={() => navigate(`/bots/${b.id}/metrics`)}
+                      data-testid={`metrics-${b.id}`}
+                    >
+                      Metrics
+                    </button>
                     {b.status === 'stopped' && (
                       <button
                         className="btn btn-sm btn-primary"

@@ -2,6 +2,7 @@ import { Routes, Route, NavLink, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
 import DashboardPage from '@/pages/DashboardPage';
 import BotsPage from '@/pages/BotsPage';
+import MetricsPage from '@/pages/MetricsPage';
 import StrategiesPage from '@/pages/StrategiesPage';
 import LoginPage from '@/pages/LoginPage';
 import AdminPage from '@/pages/AdminPage';
@@ -105,6 +106,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <BotsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/bots/:id/metrics"
+            element={
+              <ProtectedRoute>
+                <MetricsPage />
               </ProtectedRoute>
             }
           />

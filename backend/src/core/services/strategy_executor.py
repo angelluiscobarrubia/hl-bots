@@ -10,9 +10,11 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from src.core.entities.bot import Bot
 from src.core.entities.order import Order, OrderSide
 from src.core.logging import get_logger
+from src.core.models import Trade
 from src.core.ports.i_hyperliquid_adapter import IHyperliquidAdapter
 from src.core.ports.i_strategy import IStrategy
 from src.core.services.event_bus import EVENT_BOT_TRADE_EXECUTED, get_event_bus
@@ -41,11 +43,13 @@ class StrategyExecutor:
         adapter: IHyperliquidAdapter,
         strategy: IStrategy,
         risk_manager: RiskManager | None = None,
+        session_factory: async_sessionmaker[AsyncSession] | None = None,
     ) -> None:
         self.bot = bot
         self.adapter = adapter
         self.strategy = strategy
         self.risk_manager = risk_manager
+        self._session_factory = session_factory
         self.trades: list[Order] = []
         self._running = False
 
@@ -106,6 +110,7 @@ class StrategyExecutor:
             self.bot.symbol, signal.action, quantity
         )
         self.trades.append(order)
+        await self._persist_trade(order)
 
         get_event_bus().publish(
             EVENT_BOT_TRADE_EXECUTED,
@@ -156,6 +161,34 @@ class StrategyExecutor:
     def stop(self) -> None:
         """Detiene el bucle ``run_forever`` de forma cooperativa."""
         self._running = False
+
+    async def _persist_trade(self, order: Order) -> None:
+        """Persiste el trade ejecutado en la base de datos.
+
+        Si no se configuró un ``session_factory`` (p. ej. en tests unitarios),
+        el trade solo se mantiene en memoria y no se persiste.
+        """
+        if self._session_factory is None:
+            return
+        try:
+            async with self._session_factory() as session:
+                trade = Trade(
+                    bot_id=int(self.bot.id),
+                    user_id=int(self.bot.user_id),
+                    symbol=order.symbol,
+                    side=order.side.value,
+                    price=order.price,
+                    quantity=order.quantity,
+                    pnl=0.0,
+                )
+                session.add(trade)
+                await session.commit()
+        except Exception:
+            logger.exception(
+                "strategy_executor.persist_trade_failed",
+                bot_id=self.bot.id,
+                symbol=self.bot.symbol,
+            )
 
     async def _default_quantity(self, current_price: float) -> float:
         """Calcula la cantidad por defecto: 10% del balance / precio actual."""

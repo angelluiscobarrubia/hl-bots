@@ -187,3 +187,47 @@ class RiskStatusResponse(BaseModel):
     open_positions: int
     is_halted: bool
     halt_reason: str | None = None
+
+
+class TradeOut(BaseModel):
+    """Datos de un trade ejecutado por un bot."""
+
+    id: int
+    bot_id: int
+    symbol: str
+    side: str
+    price: float
+    quantity: float
+    pnl: float
+    executed_at: datetime
+
+
+class MetricsResponse(BaseModel):
+    """Métricas agregadas de rendimiento de un bot."""
+
+    bot_id: int
+    total_trades: int
+    winning_trades: int
+    losing_trades: int
+    win_rate: float
+    total_pnl: float
+    avg_pnl: float
+    max_win: float
+    max_loss: float
+    sharpe_ratio: float | None
+    starting_balance: float
+    current_balance: float
+
+
+class EquityPoint(BaseModel):
+    """Un punto de la curva de equity (P&L acumulado)."""
+
+    timestamp: datetime
+    equity: float
+
+
+class EquityCurveResponse(BaseModel):
+    """Curva de equity de un bot."""
+
+    bot_id: int
+    points: list[EquityPoint]
