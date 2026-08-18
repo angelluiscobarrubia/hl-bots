@@ -60,7 +60,8 @@ arquitectónica, un subsistema o un flujo. Mantener sincronizado con la implemen
 | Dockerfile backend | ✅ |
 | docker-compose con migrate service | 🟡 (usa `docker run` directo de momento) |
 | Adapters Hyperliquid (Real + Paper) | 🟡 |
-| Auth JWT + Fernet cipher | 🟡 (diseño listo) |
+| Auth JWT + permisos (admin/user) | ✅ |
+| Fernet cipher para API keys de exchanges | ✅ (cipher + modelo ApiKey + migración + rutas + frontend) |
 | Risk Manager | ⚪ |
 | WebSocket de bots en vivo | ⚪ |
 | CI/CD (GitHub Actions) | ⚪ |

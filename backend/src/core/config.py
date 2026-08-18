@@ -45,6 +45,14 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_expires_minutes: int = 1440
 
+    # Auth
+    access_token_expire_minutes: int = 15
+    refresh_token_expire_days: int = 7
+
+    # Rate limiting
+    rate_limit_login_per_minute: int = 5
+    rate_limit_refresh_per_minute: int = 10
+
     # Hyperliquid
     hyperliquid_mainnet_url: str = "https://api.hyperliquid.xyz"
     hyperliquid_testnet_url: str = "https://api.hyperliquid-testnet.xyz"

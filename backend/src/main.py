@@ -13,8 +13,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_fastapi_instrumentator import Instrumentator
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 from strategies.watcher import StrategiesWatcher
 
+from src.api.limiter import limiter
+from src.api.routes import admin_routes, api_key_routes, auth_routes
 from src.core.logging import configure_logging, get_logger
 from src.core.services.strategy_manager import strategy_manager
 
@@ -70,6 +74,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Rate limiting (slowapi)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# Routers de autenticación y administración
+app.include_router(auth_routes.router)
+app.include_router(admin_routes.router)
+app.include_router(api_key_routes.router)
 
 # Métricas Prometheus en /metrics
 Instrumentator(
