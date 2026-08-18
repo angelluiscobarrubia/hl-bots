@@ -73,3 +73,49 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     user: UserOut
     must_change_password: bool
+
+
+
+class CreateApiKeyRequest(BaseModel):
+    """Request para crear una API key cifrada."""
+
+    user_id: int
+    bot_id: str
+    exchange: str = "hyperliquid"
+    api_key: str
+    secret: str
+
+    @field_validator("bot_id")
+    @classmethod
+    def bot_id_not_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("bot_id no puede estar vacío")
+        return v
+
+    @field_validator("api_key", "secret")
+    @classmethod
+    def secrets_not_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Los secretos no pueden estar vacíos")
+        return v
+
+
+class ApiKeyOut(BaseModel):
+    """Response con metadatos de API key (nunca plaintext)."""
+
+    id: int
+    user_id: int
+    bot_id: str
+    exchange: str
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ApiKeyListResponse(BaseModel):
+    """Response para listado de API keys."""
+
+    keys: list[ApiKeyOut]
+    total: int

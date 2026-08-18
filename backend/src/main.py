@@ -18,7 +18,7 @@ from slowapi.errors import RateLimitExceeded
 from strategies.watcher import StrategiesWatcher
 
 from src.api.limiter import limiter
-from src.api.routes import admin_routes, auth_routes
+from src.api.routes import admin_routes, api_key_routes, auth_routes
 from src.core.logging import configure_logging, get_logger
 from src.core.services.strategy_manager import strategy_manager
 
@@ -82,6 +82,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # Routers de autenticación y administración
 app.include_router(auth_routes.router)
 app.include_router(admin_routes.router)
+app.include_router(api_key_routes.router)
 
 # Métricas Prometheus en /metrics
 Instrumentator(
